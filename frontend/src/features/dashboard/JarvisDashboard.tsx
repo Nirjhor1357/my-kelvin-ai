@@ -25,8 +25,9 @@ export function JarvisDashboard() {
     socket.on("connect", () => pushLog("Realtime socket connected"));
     socket.on("disconnect", () => pushLog("Realtime socket disconnected"));
     socket.on("system:ready", () => pushLog("Realtime backend ready"));
-    socket.on("chat:message", (payload: { answer: string }) => {
-      addMessage({ role: "assistant", content: payload.answer });
+    socket.on("chat:message", () => {
+      // Chat replies are already appended from the HTTP /chat/message response.
+      // Keep this listener for status visibility without duplicating UI messages.
       pushLog("Realtime chat update received");
       setBusy(false);
     });
@@ -40,7 +41,7 @@ export function JarvisDashboard() {
     return () => {
       socket.disconnect();
     };
-  }, [apiBaseUrl, addMessage, pushLog, setBusy, setTaskRun]);
+  }, [apiBaseUrl, pushLog, setBusy, setTaskRun]);
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 md:p-8">
