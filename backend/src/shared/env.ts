@@ -22,4 +22,22 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info")
 });
 
-export const env = envSchema.parse(process.env);
+let env: z.infer<typeof envSchema>;
+
+try {
+  console.log("[env] Parsing environment variables...");
+  env = envSchema.parse(process.env);
+  console.log("[env] Environment variables parsed successfully");
+  if (process.env.NODE_ENV === "production") {
+    console.log("[env] Production mode detected");
+    if (!process.env.DATABASE_URL) {
+      console.warn("[env] WARNING: DATABASE_URL not explicitly set, using default SQLite file");
+    }
+  }
+} catch (error) {
+  console.error("[env] FATAL: Failed to parse environment variables");
+  console.error("[env] Error details:", JSON.stringify(error, null, 2));
+  throw error;
+}
+
+export { env };
