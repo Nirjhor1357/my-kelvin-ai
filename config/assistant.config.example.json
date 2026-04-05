@@ -1,0 +1,22 @@
+{
+  "assistantName": "Jarvis",
+  "executionLimits": {
+    "maxSteps": 8,
+    "maxRetriesPerStep": 2,
+    "timeoutMs": 90000,
+    "maxInputTokens": 6000,
+    "maxOutputTokens": 1500
+  },
+  "toolPolicy": {
+    "allowedHttpHosts": [
+      "api.github.com",
+      "httpbin.org",
+      "jsonplaceholder.typicode.com"
+    ],
+    "dangerousToolsEnabled": false
+  },
+  "memory": {
+    "defaultScope": "project",
+    "searchTopK": 5
+  }
+}

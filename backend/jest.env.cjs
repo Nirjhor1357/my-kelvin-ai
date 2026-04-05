@@ -1,0 +1,13 @@
+process.env.NODE_ENV = process.env.NODE_ENV || "test";
+process.env.PORT = process.env.PORT || "8080";
+process.env.HOST = process.env.HOST || "127.0.0.1";
+process.env.CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "file:D:/Projects/Jarvis/backend/prisma/test.db";
+process.env.DATABASE_PATH = process.env.DATABASE_PATH || "./data/jarvis.db";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-access-secret";
+process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+process.env.SENTRY_DSN = "";
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+process.env.OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+process.env.OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";

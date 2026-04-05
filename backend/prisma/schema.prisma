@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  name           String?
+  passwordHash   String
+  role           String         @default("USER")
+  chats          Chat[]
+  memories       Memory[]
+  refreshTokens   RefreshToken[]
+  featureFlags   FeatureFlag[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Chat {
+  id          String       @id @default(cuid())
+  userId      String
+  title       String?
+  summary     String?
+  status      String       @default("ACTIVE")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  taskRuns    TaskRun[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  chatId      String
+  role        String
+  content     String
+  metadata    String?
+  chat        Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([chatId, createdAt])
+}
+
+model Memory {
+  id          String       @id @default(cuid())
+  userId      String?
+  scope       String
+  content     String
+  embedding   String?
+  metadata    String?
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, scope, createdAt])
+}
+
+model RefreshToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model FeatureFlag {
+  id          String    @id @default(cuid())
+  userId      String?
+  key         String
+  enabled     Boolean   @default(false)
+  metadata    String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, key])
+  @@index([key, enabled])
+}
+
+model TaskRun {
+  id          String      @id @default(cuid())
+  chatId      String
+  goal        String
+  status      String      @default("RUNNING")
+  summary     String?
+  stepsJson   String
+  errorsJson  String
+  tokenUsage  String
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+  chat        Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, startedAt])
+  @@index([status, startedAt])
+}
