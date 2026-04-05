@@ -24,4 +24,4 @@ COPY --from=base /app/node_modules/.prisma ./node_modules/.prisma
 RUN mkdir -p /app/data && chmod 777 /app/data
 
 EXPOSE 8080
-CMD ["npm", "run", "start"]
+CMD ["sh", "-c", "npx prisma db push && npm run start"]
