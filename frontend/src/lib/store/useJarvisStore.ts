@@ -23,7 +23,7 @@ interface JarvisState {
   setMemoryResults: (results: MemoryResult[]) => void;
 }
 
-const initialApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const initialApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://my-kelvin-ai-production.up.railway.app";
 
 export const useJarvisStore = create<JarvisState>((set) => ({
   apiBaseUrl: initialApiBaseUrl,
