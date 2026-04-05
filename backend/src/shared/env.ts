@@ -19,7 +19,34 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info")
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  MAX_INPUT_CHARS: z.coerce.number().int().min(200).max(20000).default(2000),
+  MAX_RESPONSE_BYTES: z.coerce.number().int().min(1024).max(10 * 1024 * 1024).default(512 * 1024),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(2000).max(120000).default(25000),
+  AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  AI_FALLBACK_MESSAGE: z.string().default("I hit a temporary AI issue. Please retry in a moment."),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(10).max(5000).default(180),
+  RATE_LIMIT_WINDOW: z.string().default("1 minute")
+}).superRefine((value, ctx) => {
+  if (value.NODE_ENV !== "production") {
+    return;
+  }
+
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "dev-access-secret-change-me") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_SECRET"], message: "JWT_SECRET must be set to a strong production value" });
+  }
+
+  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET === "dev-refresh-secret-change-me") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_REFRESH_SECRET"], message: "JWT_REFRESH_SECRET must be set to a strong production value" });
+  }
+
+  if (value.AI_PROVIDER === "groq" && !value.GROQ_API_KEY) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GROQ_API_KEY"], message: "GROQ_API_KEY is required when AI_PROVIDER=groq" });
+  }
+
+  if (value.AI_PROVIDER === "openai" && !value.OPENAI_API_KEY) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["OPENAI_API_KEY"], message: "OPENAI_API_KEY is required when AI_PROVIDER=openai" });
+  }
 });
 
 let env: z.infer<typeof envSchema>;

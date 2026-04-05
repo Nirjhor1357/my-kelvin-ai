@@ -6,10 +6,12 @@ import { SectionCard } from "../../components/SectionCard";
 export function SettingsPanel() {
   const apiBaseUrl = useJarvisStore((state) => state.apiBaseUrl);
   const sessionId = useJarvisStore((state) => state.sessionId);
+  const accessToken = useJarvisStore((state) => state.accessToken);
   const busy = useJarvisStore((state) => state.busy);
   const logs = useJarvisStore((state) => state.logs);
   const setApiBaseUrl = useJarvisStore((state) => state.setApiBaseUrl);
   const setSessionId = useJarvisStore((state) => state.setSessionId);
+  const setAccessToken = useJarvisStore((state) => state.setAccessToken);
 
   return (
     <SectionCard title="Settings + Logs" description="Endpoint configuration and runtime activity stream.">
@@ -18,6 +20,8 @@ export function SettingsPanel() {
         <input className="ring-focus w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
         <label className="mb-1 mt-2 block font-mono text-xs uppercase tracking-wide">Session / User ID</label>
         <input className="ring-focus w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" value={sessionId} onChange={(event) => setSessionId(event.target.value)} />
+        <label className="mb-1 mt-2 block font-mono text-xs uppercase tracking-wide">JWT Access Token</label>
+        <input className="ring-focus w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="optional bearer token" />
         <div className="mt-2 flex items-center justify-between">
           <span>Busy</span>
           <span className={`font-semibold ${busy ? "text-[var(--danger)]" : "text-[var(--accent)]"}`}>{String(busy)}</span>

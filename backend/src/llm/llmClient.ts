@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { env } from "../config/env.js";
+import { withRetry } from "../shared/retry.js";
 
 export interface LLMUsage {
   promptTokens: number;
@@ -72,25 +73,59 @@ export async function completeText(prompt: string, system: string, maxOutputToke
     };
   }
 
-  const response = await client.chat.completions.create({
-    model,
-    max_tokens: maxOutputTokens,
-    temperature: 0.2,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: prompt }
-    ]
-  });
+  try {
+    const response = await withRetry(
+      async (attempt) => {
+        const timeout = env.AI_TIMEOUT_MS + attempt * 1000;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(`AI timeout after ${timeout}ms`), timeout);
 
-  const text = normalizeMessageContent(response.choices[0]?.message?.content ?? "");
-  return {
-    content: text || `Empty completion from ${provider} provider`,
-    usage: {
-      promptTokens: response.usage?.prompt_tokens ?? 0,
-      completionTokens: response.usage?.completion_tokens ?? 0,
-      totalTokens: response.usage?.total_tokens ?? 0
-    }
-  };
+        try {
+          return await client.chat.completions.create({
+            model,
+            max_tokens: maxOutputTokens,
+            temperature: 0.2,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: prompt }
+            ]
+          }, {
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      {
+        retries: env.AI_MAX_RETRIES,
+        baseDelayMs: 500,
+        maxDelayMs: 2500,
+        shouldRetry: (error) => {
+          const status = (error as { status?: number })?.status;
+          if (status === 401 || status === 403) {
+            return false;
+          }
+
+          return true;
+        }
+      }
+    );
+
+    const text = normalizeMessageContent(response.choices[0]?.message?.content ?? "");
+    return {
+      content: text || `Empty completion from ${provider} provider`,
+      usage: {
+        promptTokens: response.usage?.prompt_tokens ?? 0,
+        completionTokens: response.usage?.completion_tokens ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0
+      }
+    };
+  } catch {
+    return {
+      content: env.AI_FALLBACK_MESSAGE,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    };
+  }
 }
 
 export async function completeJson<T>(prompt: string, system: string, maxOutputTokens = 700): Promise<LLMResponse<T>> {

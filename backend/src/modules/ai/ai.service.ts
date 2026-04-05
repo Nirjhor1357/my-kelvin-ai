@@ -12,6 +12,7 @@ import { ToolRegistry } from "./tools/tool-registry.js";
 import { aiTools } from "./tools/index.js";
 import { AiTaskRun, MemoryScope } from "./ai.model.js";
 import { emitRealtimeEvent } from "../../shared/realtime.js";
+import { cacheService } from "../../shared/cache.js";
 
 const planner = new PlannerAgent();
 const executor = new ExecutorAgent();
@@ -33,6 +34,13 @@ function mergeUsage(
 
 export class AIService {
   async createChatReply(input: { userId: string; chatId: string; message: string; memoryTopK?: number }): Promise<{ answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }>; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }> {
+    const cacheNamespace = "chat-reply";
+    const cacheLookup = `${input.userId}:${input.chatId}:${input.message.trim().toLowerCase()}`;
+    const cached = await cacheService.getJson<{ answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }>; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }>(cacheNamespace, cacheLookup);
+    if (cached) {
+      return cached;
+    }
+
     await shortTermMemory.addMessage(input.chatId, "user", input.message);
     const recentMessages = await shortTermMemory.getRecentMessages(input.chatId, 12);
     const memories = await longTermMemory.vector.search({
@@ -62,7 +70,10 @@ export class AIService {
     await shortTermMemory.addMessage(input.chatId, "assistant", answer);
     emitRealtimeEvent("chat:message", { chatId: input.chatId, userId: input.userId, answer });
 
-    return { answer, retrievedMemories: memories, usage: completion.usage };
+    const payload = { answer, retrievedMemories: memories, usage: completion.usage };
+    await cacheService.setJson(cacheNamespace, cacheLookup, payload, 180);
+
+    return payload;
   }
 
   async runGoal(input: { userId: string; chatId: string; goal: string; limits?: { maxSteps?: number; maxRetriesPerStep?: number; timeoutMs?: number } }): Promise<AiTaskRun> {

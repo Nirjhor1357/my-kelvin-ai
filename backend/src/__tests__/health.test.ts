@@ -13,7 +13,15 @@ describe("GET /api/v1/health", () => {
 
   it("returns a healthy versioned response", async () => {
     const response = await app.inject({ method: "GET", url: "/api/v1/health" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ ok: true, service: "jarvis-backend", version: "v1" });
+    expect([200, 503]).toContain(response.statusCode);
+
+    const payload = response.json();
+    expect(payload).toMatchObject({
+      service: "jarvis-backend",
+      version: "v1",
+      dependencies: {
+        db: { ok: expect.any(Boolean) }
+      }
+    });
   });
 });

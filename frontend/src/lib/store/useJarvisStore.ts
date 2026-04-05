@@ -4,6 +4,7 @@ import { AssistantMessage, MemoryResult, TaskRun } from "../types";
 interface JarvisState {
   apiBaseUrl: string;
   sessionId: string;
+  accessToken: string;
   chatId: string;
   messages: AssistantMessage[];
   taskRun: TaskRun | null;
@@ -13,6 +14,7 @@ interface JarvisState {
   listening: boolean;
   setApiBaseUrl: (value: string) => void;
   setSessionId: (value: string) => void;
+  setAccessToken: (value: string) => void;
   setChatId: (value: string) => void;
   setBusy: (value: boolean) => void;
   setListening: (value: boolean) => void;
@@ -24,10 +26,12 @@ interface JarvisState {
 }
 
 const initialApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://my-kelvin-ai-production.up.railway.app";
+const initialAccessToken = typeof window !== "undefined" ? window.localStorage.getItem("jarvis_access_token") ?? "" : "";
 
 export const useJarvisStore = create<JarvisState>((set) => ({
   apiBaseUrl: initialApiBaseUrl,
   sessionId: "dev-session-1",
+  accessToken: initialAccessToken,
   chatId: "",
   messages: [],
   taskRun: null,
@@ -37,6 +41,17 @@ export const useJarvisStore = create<JarvisState>((set) => ({
   listening: false,
   setApiBaseUrl: (value) => set({ apiBaseUrl: value }),
   setSessionId: (value) => set({ sessionId: value }),
+  setAccessToken: (value) => {
+    if (typeof window !== "undefined") {
+      if (value) {
+        window.localStorage.setItem("jarvis_access_token", value);
+      } else {
+        window.localStorage.removeItem("jarvis_access_token");
+      }
+    }
+
+    set({ accessToken: value });
+  },
   setChatId: (value) => set({ chatId: value }),
   setBusy: (value) => set({ busy: value }),
   setListening: (value) => set({ listening: value }),

@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import crypto from "node:crypto";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
@@ -9,11 +10,14 @@ import { initializeMonitoring, Sentry } from "./shared/monitoring.js";
 import { logger } from "./shared/logger.js";
 import { initializeRealtime } from "./shared/realtime.js";
 import { registerApiV1 } from "./api/v1/index.js";
+import { getRedis, isRedisEnabled } from "./shared/redis.js";
+import { resolveUserId } from "./shared/requestIdentity.js";
 
 initializeMonitoring(process.env.SENTRY_DSN);
 
 export async function createApp() {
   const app = Fastify({
+    genReqId: () => crypto.randomUUID(),
     logger: {
       level: env.LOG_LEVEL,
       transport:
@@ -24,7 +28,34 @@ export async function createApp() {
             }
           : undefined
     },
+    requestIdHeader: "x-request-id",
+    requestIdLogLabel: "requestId",
     bodyLimit: 2 * 1024 * 1024
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    request.log.info({
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+      statusCode: reply.statusCode,
+      durationMs: reply.elapsedTime
+    }, "request.completed");
+  });
+
+  app.addHook("onSend", async (request, reply, payload) => {
+    const payloadSize = typeof payload === "string"
+      ? Buffer.byteLength(payload, "utf8")
+      : Buffer.isBuffer(payload)
+        ? payload.byteLength
+        : 0;
+    if (payloadSize > env.MAX_RESPONSE_BYTES) {
+      request.log.warn({ requestId: request.id, payloadSize }, "response_too_large");
+      reply.code(413);
+      return JSON.stringify({ error: "Response payload too large" });
+    }
+
+    return payload;
   });
 
   await app.register(cors, {
@@ -36,8 +67,10 @@ export async function createApp() {
   await app.register(cookie);
   await app.register(rateLimit, {
     global: true,
-    max: 180,
-    timeWindow: "1 minute"
+    max: env.RATE_LIMIT_MAX,
+    timeWindow: env.RATE_LIMIT_WINDOW,
+    redis: isRedisEnabled() ? getRedis() : undefined,
+    keyGenerator: (request) => resolveUserId(request) ?? request.ip
   });
   await app.register(multipart);
 

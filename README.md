@@ -105,6 +105,21 @@ Backend:
 - Start: `npm run start`
 - Mount persistent storage for the SQLite database or migrate to Postgres for scale
 
+Recommended production variables:
+
+- `NODE_ENV=production`
+- `PORT=8080`
+- `HOST=0.0.0.0`
+- `CORS_ORIGIN=https://your-frontend.vercel.app`
+- `JWT_SECRET` and `JWT_REFRESH_SECRET` with strong random values
+- `AI_PROVIDER=groq` (or `openai`)
+- `GROQ_API_KEY` or `OPENAI_API_KEY`
+- `REDIS_URL` for queue/cache/rate-limit backing store
+- `MAX_INPUT_CHARS=2000`
+- `MAX_RESPONSE_BYTES=524288`
+- `AI_TIMEOUT_MS=25000`
+- `AI_MAX_RETRIES=2`
+
 ## Security
 
 - Zod validation on all public inputs
@@ -120,6 +135,13 @@ Backend:
 - Jest unit test for a tool execution path
 - Dockerfiles for frontend and backend
 - GitHub Actions CI for typecheck, tests, lint, and builds
+
+## PostgreSQL Backup Strategy
+
+- Enable daily automatic snapshots in your managed Postgres provider.
+- Configure PITR (point-in-time recovery) when available.
+- Run periodic logical backups with `pg_dump` to object storage.
+- Test restore workflow at least once per sprint in a staging database.
 
 ## Upgrade Plan
 

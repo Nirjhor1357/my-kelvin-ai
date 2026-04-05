@@ -2,11 +2,13 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ChatService } from "./chat.service.js";
 import { resolveUserId } from "../../shared/requestIdentity.js";
+import { sanitizeText } from "../../shared/sanitize.js";
+import { env } from "../../shared/env.js";
 
 const sendMessageSchema = z.object({
   userId: z.string().min(1).optional(),
   chatId: z.string().optional(),
-  message: z.string().min(1),
+  message: z.string().min(1).max(env.MAX_INPUT_CHARS),
   memoryTopK: z.number().int().min(1).max(10).optional()
 });
 
@@ -26,7 +28,13 @@ export class ChatController {
       return;
     }
 
-    reply.send(await this.chatService.sendMessage({ ...parsed.data, userId }));
+    const sanitizedMessage = sanitizeText(parsed.data.message, env.MAX_INPUT_CHARS);
+    if (!sanitizedMessage) {
+      reply.status(400).send({ error: "Message cannot be empty" });
+      return;
+    }
+
+    reply.send(await this.chatService.sendMessage({ ...parsed.data, message: sanitizedMessage, userId }));
   };
 
   listChats = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {

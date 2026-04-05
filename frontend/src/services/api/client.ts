@@ -7,19 +7,38 @@ export interface JarvisClientOptions {
 
 export class JarvisApiClient {
   private readonly root: string;
+  private readonly timeoutMs: number;
 
   constructor(options: JarvisClientOptions) {
     this.root = `${options.baseUrl.replace(/\/$/, "")}${options.versionPrefix ?? "/api/v1"}`;
+    this.timeoutMs = 20000;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.root}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {})
+    const accessToken = typeof window !== "undefined" ? window.localStorage.getItem("jarvis_access_token") ?? "" : "";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort("Request timed out"), this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.root}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(init?.headers ?? {})
+        }
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Request timed out for ${path}`);
       }
-    });
+
+      throw new Error(`Network error for ${path}: ${(error as Error).message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${path}`);
