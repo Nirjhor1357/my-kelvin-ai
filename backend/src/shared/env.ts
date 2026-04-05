@@ -12,7 +12,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default("file:./prisma/dev.db"),
   JWT_SECRET: z.string().default("dev-access-secret-change-me"),
   JWT_REFRESH_SECRET: z.string().default("dev-refresh-secret-change-me"),
-  REDIS_URL: z.string().default("redis://localhost:6379"),
+  REDIS_URL: z.string().default(""),
   AI_PROVIDER: z.enum(["groq", "openai"]).default("groq"),
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
