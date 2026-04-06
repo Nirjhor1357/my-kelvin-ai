@@ -23,6 +23,7 @@ Domain modules:
 - `backend/src/modules/user`
 - `backend/src/modules/chat`
 - `backend/src/modules/ai`
+- `backend/src/modules/agents`
 
 AI submodules:
 
@@ -45,6 +46,7 @@ Versioned API:
 - `POST /api/v1/chat/message`
 - `POST /api/v1/chat/message/stream`
 - `GET /api/v1/chat/:chatId/messages`
+- `POST /api/v1/agent`
 - `POST /api/v1/ai/goals/run`
 - `POST /api/v1/ai/goals/queue`
 - `GET /api/v1/ai/goals/jobs/:jobId`
