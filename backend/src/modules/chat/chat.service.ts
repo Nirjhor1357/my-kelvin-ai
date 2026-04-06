@@ -55,22 +55,30 @@ export class ChatService {
     };
   }
 
-  async sendMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number; useThinking?: boolean }): Promise<{ chat: ChatSummary; answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }> }> {
+  async sendMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number; useThinking?: boolean; useTools?: boolean }): Promise<{ chat: ChatSummary; answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }> }> {
     const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
 
     if (this.isAgentPrompt(input.message)) {
+      const mode = input.useTools ? "agent-tools" : input.useThinking ? "agent-thinking" : "agent";
+
       await prisma.message.create({
         data: {
           chatId: chat.id,
           role: "user",
           content: input.message,
-          metadata: JSON.stringify({ mode: input.useThinking ? "agent-thinking" : "agent" })
+          metadata: JSON.stringify({ mode })
         }
       });
 
-      const run = input.useThinking
-        ? await this.agentService.runAgentWithThinking(input.message, input.userId, chat.id)
-        : await this.agentService.runAgent(input.message, input.userId, chat.id);
+      let run: any;
+
+      if (input.useTools) {
+        run = await this.agentService.runAgentWithTools(input.message, input.userId, chat.id);
+      } else if (input.useThinking) {
+        run = await this.agentService.runAgentWithThinking(input.message, input.userId, chat.id);
+      } else {
+        run = await this.agentService.runAgent(input.message, input.userId, chat.id);
+      }
 
       await prisma.message.create({
         data: {
@@ -78,11 +86,12 @@ export class ChatService {
           role: "assistant",
           content: run.result,
           metadata: JSON.stringify({
-            mode: input.useThinking ? "agent-thinking" : "agent",
-            steps: run.steps,
+            mode,
+            steps: "steps" in run ? run.steps : undefined,
             errors: run.errors,
             iterations: "iterationCount" in run ? run.iterationCount : undefined,
-            evaluations: "evaluations" in run ? run.evaluations : undefined
+            evaluations: "evaluations" in run ? run.evaluations : undefined,
+            toolExecutions: "toolExecutions" in run ? run.toolExecutions : undefined
           })
         }
       });

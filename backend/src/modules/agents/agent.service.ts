@@ -1,6 +1,6 @@
 import { completeText } from "../../llm/llmClient.js";
 import { prisma } from "../../lib/prisma.js";
-import { AgentExecutor, AgentStepResult, ExecutionWithThinkingResult } from "./executor.js";
+import { AgentExecutor, AgentStepResult, ExecutionWithThinkingResult, ExecutionWithToolsResult, ToolExecutionLog } from "./executor.js";
 import { AgentPlanner } from "./planner.js";
 import { AgentToolRegistry, defaultAgentTools } from "./tools.js";
 
@@ -21,6 +21,14 @@ export interface AgentResult {
 export interface AgentResultWithThinking extends AgentResult {
   iterationCount: number;
   evaluations: Array<{ success: boolean; feedback: string; score?: number }>;
+}
+
+export interface AgentResultWithTools {
+  success: boolean;
+  result: string;
+  toolExecutions: ToolExecutionLog[];
+  errors: string[];
+  iterationCount: number;
 }
 
 export class AgentService {
@@ -201,6 +209,87 @@ export class AgentService {
         feedback: e.feedback,
         score: e.score
       }))
+    };
+  }
+
+  async runAgentWithTools(goal: string, userId?: string, chatId?: string): Promise<AgentResultWithTools> {
+    const task: AgentTask = {
+      id: `agent-tools-${Date.now()}`,
+      goal,
+      userId,
+      chatId
+    };
+
+    console.log(`[Agent] Starting agentic tool execution for goal: "${goal}"`);
+
+    const recentMessages = await prisma.message.findMany({
+      where: chatId
+        ? { chatId }
+        : userId
+          ? { chat: { userId } }
+          : undefined,
+      orderBy: { createdAt: "desc" },
+      take: 12
+    });
+
+    const memoryContext = recentMessages
+      .reverse()
+      .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
+      .join("\n");
+
+    const toolsExecution = await this.executor.executeWithTools({
+      goal,
+      userId,
+      chatId,
+      memoryContext,
+      availableTools: this.tools.list()
+    });
+
+    // Store comprehensive memory record
+    const toolUsageSummary = toolsExecution.toolExecutions
+      .map((exec, index) => {
+        if (exec.isFinal) {
+          return `Final [${index + 1}]: ${exec.finalResult?.substring(0, 100)}...`;
+        }
+        return `Tool [${index + 1}] ${exec.toolName}: Input=${JSON.stringify(exec.toolInput)}, Output=${exec.toolOutput?.substring(0, 50)}...`;
+      })
+      .join("\n");
+
+    const memoryContent = [
+      `Task: ${goal}`,
+      `Result: ${toolsExecution.result}`,
+      `Method: Agentic Tool Execution`,
+      `Iterations: ${toolsExecution.iterationCount}`,
+      `Success: ${toolsExecution.success}`,
+      `Errors: ${toolsExecution.errors.length ? toolsExecution.errors.join("; ") : "None"}`,
+      `Tool Execution Timeline:`,
+      toolUsageSummary
+    ].join("\n");
+
+    await prisma.memory.create({
+      data: {
+        userId,
+        scope: "PROJECT",
+        content: memoryContent,
+        metadata: JSON.stringify({
+          source: "agent-tools",
+          taskId: task.id,
+          chatId: chatId ?? null,
+          iterationCount: toolsExecution.iterationCount,
+          success: toolsExecution.success,
+          toolsUsed: toolsExecution.toolExecutions
+            .filter((t) => !t.isFinal && t.toolName)
+            .map((t) => t.toolName)
+        })
+      }
+    });
+
+    return {
+      success: toolsExecution.success,
+      result: toolsExecution.result,
+      toolExecutions: toolsExecution.toolExecutions,
+      errors: toolsExecution.errors,
+      iterationCount: toolsExecution.iterationCount
     };
   }
 }
