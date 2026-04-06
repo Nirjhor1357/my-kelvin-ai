@@ -35,6 +35,9 @@ export class WriterAgent {
       "- If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
       "- Prioritize action over asking questions when memory already contains required details.",
       "- If memory is uncertain, use soft confirmation (e.g., proceed based on known preference and mention user can correct it).",
+      "- Do not ask for confirmation.",
+      "- Ask at most one critical question only if absolutely required.",
+      "- If details are missing, assume reasonable defaults and state assumptions briefly.",
       "",
       "Write the final response in a clear, human-readable format with concise structure."
     ].join("\n");
@@ -42,7 +45,7 @@ export class WriterAgent {
     try {
       const finalDraft = await completeText(
         prompt,
-        "You are Jarvis writer agent. Produce polished, helpful final output. If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
+        "You are Jarvis writer agent. Produce polished, helpful final output. Be decisive, avoid confirmation loops, and ask at most one critical question if absolutely necessary.",
         800
       );
 

@@ -34,19 +34,24 @@ export class AgentOrchestrator {
   private readonly reasoningAgent = new ReasoningAgent();
   private readonly writerAgent = new WriterAgent();
 
-  private hasEnoughContext(goal: string, memoryContext: string): boolean {
-    const normalizedGoal = goal.toLowerCase();
-    const normalizedMemory = memoryContext.toLowerCase();
+  private hasEnoughToAct(input: { goal: string; memoryContext: string }): boolean {
+    const normalizedGoal = input.goal.toLowerCase();
+    const normalizedMemory = input.memoryContext.toLowerCase();
 
+    const hasGoal = normalizedGoal.trim().length > 0;
     const hasStudyPreference = /study best at|study preference|night|morning|evening/.test(normalizedMemory);
     const hasStudyDuration = /\b\d+\s*hours?\b|duration|study hours|typical duration/.test(normalizedMemory);
+    const memoryFacts = (normalizedMemory.match(/- \(/g) || []).length;
 
-    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
-      return hasStudyPreference || (hasStudyPreference && hasStudyDuration);
+    if (!hasGoal) {
+      return false;
     }
 
-    const memoryFacts = (normalizedMemory.match(/- \(/g) || []).length;
-    return memoryFacts >= 2;
+    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
+      return hasStudyPreference || hasStudyDuration;
+    }
+
+    return memoryFacts >= 1;
   }
 
   private hasPartialContext(goal: string, memoryContext: string): boolean {
@@ -60,6 +65,65 @@ export class AgentOrchestrator {
     }
 
     return false;
+  }
+
+  private buildSingleCriticalQuestion(goal: string): string {
+    if (/study schedule|study plan|study routine/.test(goal.toLowerCase())) {
+      return "How many hours per day can you realistically study?";
+    }
+
+    return "What is the single most important constraint I should follow for this task?";
+  }
+
+  private applyDefaultAssumptions(goal: string, memoryContext: string, output: string): string {
+    const normalizedGoal = goal.toLowerCase();
+    const normalizedMemory = memoryContext.toLowerCase();
+
+    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
+      const hasDuration = /\b\d+\s*hours?\b|duration|study hours|typical duration/.test(normalizedMemory);
+      const hasAssumption = /assuming/i.test(output);
+
+      if (!hasDuration && !hasAssumption) {
+        return `${output}\n\nAssuming 4-5 hours/day for now.`;
+      }
+    }
+
+    return output;
+  }
+
+  private enforceDecisiveOutput(output: string): string {
+    if (!output.trim()) {
+      return output;
+    }
+
+    let normalized = output
+      .replace(/please\s+confirm[^.?!]*[.?!]?/gi, "")
+      .replace(/let\s+me\s+know\s+if\s+that\s+changed[^.?!]*[.?!]?/gi, "")
+      .replace(/let\s+me\s+know\s+if\s+you\s+want[^.?!]*[.?!]?/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    const sentences = normalized.split(/(?<=[.?!])\s+/);
+    let questionCount = 0;
+
+    normalized = sentences
+      .map((sentence) => {
+        if (!sentence.includes("?")) {
+          return sentence;
+        }
+
+        questionCount += 1;
+        if (questionCount === 1) {
+          return sentence;
+        }
+
+        return sentence.replace(/\?/g, ".");
+      })
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return normalized;
   }
 
   private buildMemoryDrivenPlan(goal: string, memoryContext: string): AgentPlanStep[] {
@@ -105,10 +169,54 @@ export class AgentOrchestrator {
     let research: ResearchItem[] = [];
     let analysis = "";
     let finalOutput = "";
-    const enoughContext = this.hasEnoughContext(input.goal, input.memoryContext);
+    const enoughContext = this.hasEnoughToAct({ goal: input.goal, memoryContext: input.memoryContext });
     const partialContext = this.hasPartialContext(input.goal, input.memoryContext);
 
     console.log(`[Orchestrator] Context check: enough=${enoughContext}, partial=${partialContext}`);
+
+    if (!enoughContext) {
+      finalOutput = this.buildSingleCriticalQuestion(input.goal);
+      finalOutput = this.enforceDecisiveOutput(finalOutput);
+
+      const steps: AgentStepResult[] = [
+        {
+          id: "planner-agent",
+          title: "Planner agent requested one critical missing constraint",
+          status: "completed",
+          output: finalOutput
+        },
+        {
+          id: "researcher-agent",
+          title: "Researcher agent deferred due to insufficient context",
+          status: "completed",
+          output: "Skipped until one critical constraint is provided."
+        },
+        {
+          id: "reasoning-agent",
+          title: "Reasoning agent deferred due to insufficient context",
+          status: "completed",
+          output: "Deferred."
+        },
+        {
+          id: "writer-agent",
+          title: "Writer agent produced single critical question",
+          status: "completed",
+          output: finalOutput
+        }
+      ];
+
+      return {
+        success: true,
+        errors,
+        stages: {
+          plan,
+          research,
+          analysis,
+          finalOutput
+        },
+        steps
+      };
+    }
 
     if (enoughContext) {
       console.log("[Orchestrator] Using memory-driven direct plan (skip planner questioning)");
@@ -166,10 +274,14 @@ export class AgentOrchestrator {
           "If your available study duration has changed recently, tell me once and I will fine-tune this plan."
         ].join("\n");
       }
+
+      finalOutput = this.applyDefaultAssumptions(input.goal, input.memoryContext, finalOutput);
+      finalOutput = this.enforceDecisiveOutput(finalOutput);
     } catch (error) {
       errors.push(`executionPipeline: ${error instanceof Error ? error.message : "Unknown pipeline error"}`);
       analysis = analysis || "Pipeline fallback used.";
       finalOutput = finalOutput || analysis || "No final output generated.";
+      finalOutput = this.enforceDecisiveOutput(finalOutput);
     }
 
     const steps: AgentStepResult[] = [
