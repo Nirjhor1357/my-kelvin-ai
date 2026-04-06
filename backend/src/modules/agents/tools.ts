@@ -45,7 +45,8 @@ export const defaultAgentTools: AgentToolDefinition[] = [
     name: "search",
     description: "Searches known project/user memories for relevant context.",
     run: async (input, context) => {
-      const query = String(input.query ?? context.goal).trim();
+      const rawQuery = input.query ?? input.input ?? input.text ?? input.keyword ?? context.goal;
+      const query = String(rawQuery).trim();
       if (!query) {
         return "No query provided for search tool.";
       }

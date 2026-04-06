@@ -9,7 +9,9 @@ const sendMessageSchema = z.object({
   userId: z.string().min(1).optional(),
   chatId: z.string().optional(),
   message: z.string().min(1).max(env.MAX_INPUT_CHARS),
-  memoryTopK: z.number().int().min(1).max(10).optional()
+  memoryTopK: z.number().int().min(1).max(10).optional(),
+  useThinking: z.boolean().optional(),
+  useTools: z.boolean().optional()
 });
 
 export class ChatController {

@@ -1,4 +1,4 @@
-import { completeText, completeJson } from "../../llm/llmClient.js";
+import { completeText } from "../../llm/llmClient.js";
 import { AgentEvaluator, EvaluationResult } from "./evaluator.js";
 import { AgentPlanner, AgentPlanStep } from "./planner.js";
 import { AgentToolRegistry } from "./tools.js";
