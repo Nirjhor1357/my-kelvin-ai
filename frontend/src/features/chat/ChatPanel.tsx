@@ -108,19 +108,30 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       let streamed = "";
       let streamedChatId = chatId;
 
-      await client.chatStream(
-        { userId: sessionId, chatId: chatId || undefined, message, memoryTopK: 4 },
-        {
-          onMeta: (meta) => {
-            streamedChatId = meta.chatId;
-            setChatId(meta.chatId);
-          },
-          onToken: (token) => {
-            streamed += token;
-            setStreamDraft(streamed);
+      try {
+        await client.chatStream(
+          { userId: sessionId, chatId: chatId || undefined, message, memoryTopK: 4 },
+          {
+            onMeta: (meta) => {
+              streamedChatId = meta.chatId;
+              setChatId(meta.chatId);
+            },
+            onToken: (token) => {
+              streamed += token;
+              setStreamDraft(streamed);
+            }
           }
-        }
-      );
+        );
+      } catch {
+        const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
+        setChatId(fallback.chat.id);
+        addMessage({ role: "assistant", content: fallback.answer });
+        setStreamDraft("");
+        await refreshChats();
+        setLastFailedMessage(null);
+        pushLog("Assistant reply received (fallback)");
+        return;
+      }
 
       const finalAnswer = streamed.trim();
       if (finalAnswer) {

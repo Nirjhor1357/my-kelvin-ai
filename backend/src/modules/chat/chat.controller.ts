@@ -58,11 +58,17 @@ export class ChatController {
 
     const { chat, stream } = await this.chatService.streamMessage({ ...parsed.data, message: sanitizedMessage, userId });
 
+    const requestOrigin = request.headers.origin;
+    const allowOrigin = requestOrigin && env.CORS_ORIGIN.includes(requestOrigin) ? requestOrigin : env.CORS_ORIGIN;
+
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
-      "X-Accel-Buffering": "no"
+      "X-Accel-Buffering": "no",
+      "Access-Control-Allow-Origin": allowOrigin,
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
     });
 
     reply.raw.write(`event: meta\ndata: ${JSON.stringify({ chatId: chat.id })}\n\n`);
