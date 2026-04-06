@@ -12,6 +12,8 @@ import { initializeRealtime } from "./shared/realtime.js";
 import { registerApiV1 } from "./api/v1/index.js";
 import { getRedis, isRedisEnabled } from "./shared/redis.js";
 import { resolveUserId } from "./shared/requestIdentity.js";
+import { AppError } from "./shared/errors.js";
+import { failure } from "./shared/httpResponse.js";
 
 initializeMonitoring(process.env.SENTRY_DSN);
 
@@ -83,9 +85,14 @@ export async function createApp() {
       Sentry.captureException(error);
     }
 
+    if (error instanceof AppError) {
+      reply.status(error.statusCode).send(failure(error.code, error.message, request.id, error.details));
+      return;
+    }
+
     reply.status(500).send({
-      error: "Internal server error",
-      message: env.NODE_ENV === "production" ? "Unexpected failure" : error instanceof Error ? error.message : "Unexpected failure"
+      ...failure("INTERNAL_ERROR", env.NODE_ENV === "production" ? "Unexpected failure" : error instanceof Error ? error.message : "Unexpected failure", request.id),
+      stack: env.NODE_ENV === "production" ? undefined : error instanceof Error ? error.stack : undefined
     });
   });
 

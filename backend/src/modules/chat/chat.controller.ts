@@ -37,6 +37,44 @@ export class ChatController {
     reply.send(await this.chatService.sendMessage({ ...parsed.data, message: sanitizedMessage, userId }));
   };
 
+  sendMessageStream = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const parsed = sendMessageSchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400).send({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const userId = parsed.data.userId ?? resolveUserId(request);
+    if (!userId) {
+      reply.status(401).send({ error: "Unauthorized" });
+      return;
+    }
+
+    const sanitizedMessage = sanitizeText(parsed.data.message, env.MAX_INPUT_CHARS);
+    if (!sanitizedMessage) {
+      reply.status(400).send({ error: "Message cannot be empty" });
+      return;
+    }
+
+    const { chat, stream } = await this.chatService.streamMessage({ ...parsed.data, message: sanitizedMessage, userId });
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+
+    reply.raw.write(`event: meta\ndata: ${JSON.stringify({ chatId: chat.id })}\n\n`);
+
+    for await (const token of stream) {
+      reply.raw.write(`event: token\ndata: ${JSON.stringify({ token })}\n\n`);
+    }
+
+    reply.raw.write("event: done\\ndata: {}\\n\\n");
+    reply.raw.end();
+  };
+
   listChats = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const query = z.object({ userId: z.string().min(1).optional() }).safeParse(request.query);
     if (!query.success) {

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../lib/prisma.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../shared/jwt.js";
 import { AuthTokens, AuthUser } from "./auth.model.js";
+import { NotFoundError, UnauthorizedError, ValidationError } from "../../shared/errors.js";
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -21,7 +22,7 @@ export class AuthService {
   async register(input: { email: string; password: string; name?: string }): Promise<{ user: AuthUser; tokens: AuthTokens }> {
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) {
-      throw new Error("Email already registered");
+      throw new ValidationError("Email already registered");
     }
 
     const user = await prisma.user.create({
@@ -38,12 +39,12 @@ export class AuthService {
   async login(input: { email: string; password: string }): Promise<{ user: AuthUser; tokens: AuthTokens }> {
     const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
     if (!user) {
-      throw new Error("Invalid credentials");
+      throw new UnauthorizedError("Invalid credentials");
     }
 
     const matches = await bcrypt.compare(input.password, user.passwordHash);
     if (!matches) {
-      throw new Error("Invalid credentials");
+      throw new UnauthorizedError("Invalid credentials");
     }
 
     return this.issueTokens(user.id, user.email, user.role);
@@ -55,12 +56,12 @@ export class AuthService {
     const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } });
 
     if (!stored || stored.revokedAt) {
-      throw new Error("Refresh token revoked or unknown");
+      throw new UnauthorizedError("Refresh token revoked or unknown");
     }
 
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) {
-      throw new Error("User not found");
+      throw new NotFoundError("User not found");
     }
 
     await prisma.refreshToken.update({

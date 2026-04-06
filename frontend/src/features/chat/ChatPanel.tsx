@@ -25,6 +25,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [isOnline, setIsOnline] = useState(true);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [streamDraft, setStreamDraft] = useState("");
   const messages = useJarvisStore((state) => state.messages);
   const sessionId = useJarvisStore((state) => state.sessionId);
   const chatId = useJarvisStore((state) => state.chatId);
@@ -62,17 +63,17 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
 
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
 
-  useEffect(() => {
-    async function loadChats(): Promise<void> {
-      try {
-        const response = await client.listChats(sessionId);
-        setChats(response.chats);
-      } catch {
-        // Keep chat UI operational if history retrieval fails.
-      }
+  async function refreshChats(): Promise<void> {
+    try {
+      const response = await client.listChats(sessionId);
+      setChats(response.chats);
+    } catch {
+      // Keep chat UI operational if history retrieval fails.
     }
+  }
 
-    void loadChats();
+  useEffect(() => {
+    void refreshChats();
   }, [client, sessionId]);
 
   async function loadChatHistory(nextChatId: string): Promise<void> {
@@ -100,16 +101,38 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   async function sendMessage(message: string): Promise<void> {
     setBusy(true);
     setErrorText("");
+    setStreamDraft("");
     pushLog("Sending chat message");
 
     try {
-      const response = await client.chat({ userId: sessionId, chatId: chatId || undefined, message, memoryTopK: 4 });
-      setChatId(response.chat.id);
-      addMessage({ role: "assistant", content: response.answer });
-      setChats((existing) => {
-        const withoutCurrent = existing.filter((chat) => chat.id !== response.chat.id);
-        return [response.chat, ...withoutCurrent];
-      });
+      let streamed = "";
+      let streamedChatId = chatId;
+
+      await client.chatStream(
+        { userId: sessionId, chatId: chatId || undefined, message, memoryTopK: 4 },
+        {
+          onMeta: (meta) => {
+            streamedChatId = meta.chatId;
+            setChatId(meta.chatId);
+          },
+          onToken: (token) => {
+            streamed += token;
+            setStreamDraft(streamed);
+          }
+        }
+      );
+
+      const finalAnswer = streamed.trim();
+      if (finalAnswer) {
+        addMessage({ role: "assistant", content: finalAnswer });
+      } else {
+        const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
+        setChatId(fallback.chat.id);
+        addMessage({ role: "assistant", content: fallback.answer });
+      }
+
+      setStreamDraft("");
+      await refreshChats();
       setLastFailedMessage(null);
       pushLog("Assistant reply received");
     } catch (error) {
@@ -257,7 +280,15 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
                 )}
               </div>
             ))}
-            {busy && <div className="mr-8 rounded-lg bg-[var(--accent-2)]/12 px-3 py-2 text-sm italic text-slate-700">Jarvis is typing...</div>}
+            {busy && streamDraft && (
+              <div className="mr-8 rounded-lg bg-[var(--accent-2)]/12 px-3 py-2 text-sm text-slate-700">
+                <div className="mb-1 font-mono text-[11px] uppercase tracking-wide">assistant</div>
+                <div className="prose prose-sm max-w-none leading-6">
+                  <ReactMarkdown>{streamDraft}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+            {busy && !streamDraft && <div className="mr-8 rounded-lg bg-[var(--accent-2)]/12 px-3 py-2 text-sm italic text-slate-700">Jarvis is typing...</div>}
           </div>
         )}
       </div>

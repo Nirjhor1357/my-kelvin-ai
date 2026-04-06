@@ -62,6 +62,18 @@ export class ChatService {
     };
   }
 
+  async streamMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number }): Promise<{ chat: ChatSummary; stream: AsyncGenerator<string> }> {
+    const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
+    const stream = this.aiService.createChatReplyStream({
+      userId: input.userId,
+      chatId: chat.id,
+      message: input.message,
+      memoryTopK: input.memoryTopK
+    });
+
+    return { chat, stream };
+  }
+
   async listChats(userId: string): Promise<ChatSummary[]> {
     const chats = await prisma.chat.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
     return chats.map((chat: { id: string; userId: string; title: string | null; summary: string | null; status: string }) => ({

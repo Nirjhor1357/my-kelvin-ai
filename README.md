@@ -30,6 +30,7 @@ AI submodules:
 - `memory/` short-term, long-term, vector retrieval
 - `tools/` web search, calculator, file system sandbox
 - `prompts/` system and chat prompts
+- `llm/providers/` provider-agnostic adapters (Groq/OpenAI-compatible)
 
 Versioned API:
 
@@ -42,6 +43,7 @@ Versioned API:
 - `PATCH /api/v1/users/profile`
 - `GET /api/v1/chat`
 - `POST /api/v1/chat/message`
+- `POST /api/v1/chat/message/stream`
 - `GET /api/v1/chat/:chatId/messages`
 - `POST /api/v1/ai/goals/run`
 - `POST /api/v1/ai/goals/queue`

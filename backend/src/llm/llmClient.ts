@@ -1,44 +1,9 @@
-import OpenAI from "openai";
 import { env } from "../config/env.js";
 import { withRetry } from "../shared/retry.js";
+import { createProvider } from "./providers/factory.js";
+import { LLMResponse, LLMUsage } from "./providers/types.js";
 
-export interface LLMUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
-
-export interface LLMResponse<T = string> {
-  content: T;
-  usage: LLMUsage;
-}
-
-const openAiClient = env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: env.OPENAI_API_KEY })
-  : null;
-
-const groqClient = env.GROQ_API_KEY
-  ? new OpenAI({
-      apiKey: env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1"
-    })
-  : null;
-
-function resolveTextClient(): { client: OpenAI | null; model: string; provider: "groq" | "openai" } {
-  if (env.AI_PROVIDER === "groq") {
-    return {
-      client: groqClient ?? openAiClient,
-      model: groqClient ? env.GROQ_MODEL : env.OPENAI_MODEL,
-      provider: groqClient ? "groq" : "openai"
-    };
-  }
-
-  return {
-    client: openAiClient ?? groqClient,
-    model: openAiClient ? env.OPENAI_MODEL : env.GROQ_MODEL,
-    provider: openAiClient ? "openai" : "groq"
-  };
-}
+const provider = createProvider();
 
 function normalizeMessageContent(content: string | Array<{ type: string; text?: string }> | null): string {
   if (!content) {
@@ -65,8 +30,7 @@ function parseJson<T>(raw: string): T {
 }
 
 export async function completeText(prompt: string, system: string, maxOutputTokens = 700): Promise<LLMResponse<string>> {
-  const { client, model, provider } = resolveTextClient();
-  if (!client) {
+  if (!provider) {
     return {
       content: "No AI API key configured. Set GROQ_API_KEY (preferred) or OPENAI_API_KEY.",
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
@@ -74,57 +38,48 @@ export async function completeText(prompt: string, system: string, maxOutputToke
   }
 
   try {
-    const response = await withRetry(
-      async (attempt) => {
-        const timeout = env.AI_TIMEOUT_MS + attempt * 1000;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(`AI timeout after ${timeout}ms`), timeout);
-
-        try {
-          return await client.chat.completions.create({
-            model,
-            max_tokens: maxOutputTokens,
-            temperature: 0.2,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: prompt }
-            ]
-          }, {
-            signal: controller.signal
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-      },
+    return await withRetry(
+      async (attempt) => provider.completeText({
+        prompt,
+        system,
+        maxOutputTokens,
+        timeoutMs: env.AI_TIMEOUT_MS + attempt * 1000
+      }),
       {
         retries: env.AI_MAX_RETRIES,
         baseDelayMs: 500,
         maxDelayMs: 2500,
         shouldRetry: (error) => {
           const status = (error as { status?: number })?.status;
-          if (status === 401 || status === 403) {
-            return false;
-          }
-
-          return true;
+          return !(status === 401 || status === 403);
         }
       }
     );
-
-    const text = normalizeMessageContent(response.choices[0]?.message?.content ?? "");
-    return {
-      content: text || `Empty completion from ${provider} provider`,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens ?? 0,
-        completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0
-      }
-    };
   } catch {
     return {
       content: env.AI_FALLBACK_MESSAGE,
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
     };
+  }
+}
+
+export async function* streamText(prompt: string, system: string, maxOutputTokens = 700): AsyncGenerator<string> {
+  if (!provider) {
+    yield "No AI API key configured. Set GROQ_API_KEY (preferred) or OPENAI_API_KEY.";
+    return;
+  }
+
+  try {
+    for await (const token of provider.streamText({
+      prompt,
+      system,
+      maxOutputTokens,
+      timeoutMs: env.AI_TIMEOUT_MS
+    })) {
+      yield token;
+    }
+  } catch {
+    yield env.AI_FALLBACK_MESSAGE;
   }
 }
 
@@ -137,16 +92,11 @@ export async function completeJson<T>(prompt: string, system: string, maxOutputT
 }
 
 export async function createEmbedding(text: string): Promise<number[]> {
-  if (!openAiClient || !env.OPENAI_EMBEDDING_MODEL) {
+  if (!provider) {
     return deterministicEmbedding(text, 256);
   }
 
-  const response = await openAiClient.embeddings.create({
-    model: env.OPENAI_EMBEDDING_MODEL,
-    input: text.slice(0, 8000)
-  });
-
-  return response.data[0]?.embedding ?? deterministicEmbedding(text, 256);
+  return provider.createEmbedding(text);
 }
 
 function deterministicEmbedding(text: string, dimensions: number): number[] {

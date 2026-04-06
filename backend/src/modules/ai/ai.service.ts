@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { completeText } from "../../llm/llmClient.js";
+import { completeText, streamText } from "../../llm/llmClient.js";
 import { prisma } from "../../lib/prisma.js";
 import { SYSTEM_PROMPT } from "./prompts/system.prompt.js";
 import { CHAT_PROMPT } from "./prompts/chat.prompt.js";
@@ -20,6 +20,28 @@ const critic = new CriticAgent();
 const shortTermMemory = new ShortTermMemory();
 const longTermMemory = new LongTermMemory();
 const toolRegistry = new ToolRegistry(aiTools);
+
+function buildChatPrompt(input: {
+  message: string;
+  recentMessages: Array<{ role: string; content: string }>;
+  memories: Array<{ score: number; content: string }>;
+}): string {
+  return [
+    CHAT_PROMPT,
+    "",
+    "System:",
+    SYSTEM_PROMPT,
+    "",
+    "Recent messages:",
+    input.recentMessages.map((entry) => `${entry.role.toUpperCase()}: ${entry.content}`).join("\n") || "None",
+    "",
+    "Relevant memories:",
+    input.memories.map((memory) => `[${memory.score.toFixed(3)}] ${memory.content}`).join("\n") || "None",
+    "",
+    "User:",
+    input.message
+  ].join("\n");
+}
 
 function mergeUsage(
   aggregate: AiTaskRun["tokenUsage"],
@@ -49,21 +71,7 @@ export class AIService {
       topK: input.memoryTopK ?? 4
     });
 
-    const prompt = [
-      CHAT_PROMPT,
-      "",
-      "System:",
-      SYSTEM_PROMPT,
-      "",
-      "Recent messages:",
-      recentMessages.map((entry) => `${entry.role.toUpperCase()}: ${entry.content}`).join("\n") || "None",
-      "",
-      "Relevant memories:",
-      memories.map((memory) => `[${memory.score.toFixed(3)}] ${memory.content}`).join("\n") || "None",
-      "",
-      "User:",
-      input.message
-    ].join("\n");
+    const prompt = buildChatPrompt({ message: input.message, recentMessages, memories });
 
     const completion = await completeText(prompt, SYSTEM_PROMPT, 800);
     const answer = completion.content || "No response generated.";
@@ -74,6 +82,28 @@ export class AIService {
     await cacheService.setJson(cacheNamespace, cacheLookup, payload, 180);
 
     return payload;
+  }
+
+  async *createChatReplyStream(input: { userId: string; chatId: string; message: string; memoryTopK?: number }): AsyncGenerator<string> {
+    await shortTermMemory.addMessage(input.chatId, "user", input.message);
+    const recentMessages = await shortTermMemory.getRecentMessages(input.chatId, 12);
+    const memories = await longTermMemory.vector.search({
+      userId: input.userId,
+      query: input.message,
+      topK: input.memoryTopK ?? 4
+    });
+
+    const prompt = buildChatPrompt({ message: input.message, recentMessages, memories });
+    let answer = "";
+
+    for await (const token of streamText(prompt, SYSTEM_PROMPT, 800)) {
+      answer += token;
+      yield token;
+    }
+
+    const finalAnswer = answer || "No response generated.";
+    await shortTermMemory.addMessage(input.chatId, "assistant", finalAnswer);
+    emitRealtimeEvent("chat:message", { chatId: input.chatId, userId: input.userId, answer: finalAnswer });
   }
 
   async runGoal(input: { userId: string; chatId: string; goal: string; limits?: { maxSteps?: number; maxRetriesPerStep?: number; timeoutMs?: number } }): Promise<AiTaskRun> {

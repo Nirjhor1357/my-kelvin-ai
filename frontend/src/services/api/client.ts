@@ -54,6 +54,61 @@ export class JarvisApiClient {
     });
   }
 
+  async chatStream(
+    input: { userId: string; chatId?: string; message: string; memoryTopK?: number },
+    handlers: { onMeta?: (meta: { chatId: string }) => void; onToken: (token: string) => void }
+  ): Promise<void> {
+    const accessToken = typeof window !== "undefined" ? window.localStorage.getItem("jarvis_access_token") ?? "" : "";
+    const response = await fetch(`${this.root}/chat/message/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+      },
+      body: JSON.stringify(input)
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Stream request failed (${response.status}) for /chat/message/stream`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+
+      for (const rawEvent of events) {
+        const lines = rawEvent.split("\n");
+        const eventLine = lines.find((line) => line.startsWith("event:"));
+        const dataLine = lines.find((line) => line.startsWith("data:"));
+        if (!eventLine || !dataLine) {
+          continue;
+        }
+
+        const eventName = eventLine.replace("event:", "").trim();
+        const json = dataLine.replace("data:", "").trim();
+
+        if (eventName === "meta" && handlers.onMeta) {
+          handlers.onMeta(JSON.parse(json) as { chatId: string });
+        }
+
+        if (eventName === "token") {
+          const payload = JSON.parse(json) as { token: string };
+          handlers.onToken(payload.token);
+        }
+      }
+    }
+  }
+
   async listChats(userId: string): Promise<{ chats: ChatSummary[] }> {
     const params = new URLSearchParams({ userId });
     return this.request<{ chats: ChatSummary[] }>(`/chat?${params.toString()}`);
