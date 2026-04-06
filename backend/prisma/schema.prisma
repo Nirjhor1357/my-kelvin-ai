@@ -52,6 +52,9 @@ model Memory {
   id          String       @id @default(cuid())
   userId      String?
   type        String       @default("fact")
+  key         String?
+  value       String?
+  confidence  String       @default("medium")
   scope       String
   content     String
   embedding   String?
@@ -59,6 +62,7 @@ model Memory {
   user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime     @default(now())
 
+  @@index([userId, type, key])
   @@index([userId, type, createdAt])
   @@index([userId, scope, createdAt])
 }
