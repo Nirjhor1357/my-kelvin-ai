@@ -41,7 +41,10 @@ export class AgentPlanner {
       "Break goal into actionable steps.",
       "Return valid JSON array only.",
       "Each step: { title: string, tool?: string, input?: object }.",
-      "Use tools only when helpful."
+      "Use tools only when helpful.",
+      "If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
+      "Before adding a clarification step, check whether memory context already provides the needed information.",
+      "Only add clarification when critical data is missing and cannot be inferred safely."
     ].join(" ");
 
     const prompt = [
@@ -89,7 +92,9 @@ export class AgentPlanner {
       "Refine plan based on feedback from previous execution.",
       "Return valid JSON array only.",
       "Each step: { title: string, tool?: string, input?: object }.",
-      "Keep successful steps, fix or replace failed ones."
+      "Keep successful steps, fix or replace failed ones.",
+      "If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
+      "Prefer action over clarification when memory already contains the needed user context."
     ].join(" ");
 
     const prompt = [

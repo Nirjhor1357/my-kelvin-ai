@@ -75,7 +75,8 @@ export class AgentOrchestrator {
         goal: input.goal,
         steps: plan,
         researchItems: researched.items,
-        researchData: researched.combinedData
+        researchData: researched.combinedData,
+        memoryContext: input.memoryContext
       });
       analysis = reasoned.analysis;
       console.log("ANALYSIS:", analysis);
@@ -84,7 +85,8 @@ export class AgentOrchestrator {
         goal: input.goal,
         steps: plan,
         analysis: reasoned.analysis,
-        keyInsights: reasoned.keyInsights
+        keyInsights: reasoned.keyInsights,
+        memoryContext: input.memoryContext
       });
       finalOutput = written.content;
     } catch (error) {

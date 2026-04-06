@@ -6,6 +6,7 @@ export interface WriterAgentInput {
   steps: AgentPlanStep[];
   analysis: string;
   keyInsights: string[];
+  memoryContext?: string;
 }
 
 export interface WriterAgentOutput {
@@ -24,8 +25,16 @@ export class WriterAgent {
       "Reasoning analysis:",
       input.analysis || "None",
       "",
+      "Relevant user memory:",
+      input.memoryContext || "None",
+      "",
       "Key insights:",
       input.keyInsights.map((insight) => `- ${insight}`).join("\n") || "None",
+      "",
+      "Response policy:",
+      "- If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
+      "- Prioritize action over asking questions when memory already contains required details.",
+      "- If memory is uncertain, use soft confirmation (e.g., proceed based on known preference and mention user can correct it).",
       "",
       "Write the final response in a clear, human-readable format with concise structure."
     ].join("\n");
@@ -33,7 +42,7 @@ export class WriterAgent {
     try {
       const finalDraft = await completeText(
         prompt,
-        "You are Jarvis writer agent. Produce polished, helpful final output.",
+        "You are Jarvis writer agent. Produce polished, helpful final output. If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
         800
       );
 

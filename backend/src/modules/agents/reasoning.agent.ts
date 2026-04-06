@@ -7,6 +7,7 @@ export interface ReasoningAgentInput {
   steps: AgentPlanStep[];
   researchItems: ResearchItem[];
   researchData: string;
+  memoryContext?: string;
 }
 
 export interface ReasoningAgentOutput {
@@ -26,6 +27,14 @@ export class ReasoningAgent {
       "Raw research data:",
       input.researchData || "None",
       "",
+      "Relevant user memory:",
+      input.memoryContext || "None",
+      "",
+      "Decision policy:",
+      "- If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
+      "- Before asking for clarification, check if memory already contains the needed information.",
+      "- If memory is useful but uncertain, proceed with a soft confirmation assumption.",
+      "",
       "Analyze the data and return:",
       "1) Key insights that matter for the goal",
       "2) Important caveats or uncertainty",
@@ -35,7 +44,7 @@ export class ReasoningAgent {
     try {
       const synthesis = await completeText(
         prompt,
-        "You are Jarvis reasoning agent. Extract signal, remove noise, and produce structured reasoning.",
+        "You are Jarvis reasoning agent. Extract signal, remove noise, and produce structured reasoning. If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
         700
       );
 

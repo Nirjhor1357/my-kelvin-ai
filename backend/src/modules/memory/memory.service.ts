@@ -174,9 +174,22 @@ export class MemoryService {
       return "";
     }
 
+    const confidenceLabel = (score?: number): string => {
+      if (score === undefined) {
+        return "unknown";
+      }
+      if (score >= 0.75) {
+        return "high";
+      }
+      if (score >= 0.5) {
+        return "medium";
+      }
+      return "low";
+    };
+
     return [
       "User memory:",
-      ...memories.map((memory) => `- (${memory.type}) ${memory.content}`),
+      ...memories.map((memory) => `- (${memory.type}|confidence:${confidenceLabel(memory.score)}) ${memory.content}`),
       "",
       "Use these memories when relevant while responding."
     ].join("\n");
