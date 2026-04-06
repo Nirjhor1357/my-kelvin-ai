@@ -16,6 +16,7 @@ export interface ReasoningAgentOutput {
 
 export class ReasoningAgent {
   async run(input: ReasoningAgentInput): Promise<ReasoningAgentOutput> {
+    console.log("🧩 Reasoning Agent running...");
     const prompt = [
       `Goal: ${input.goal}`,
       "",

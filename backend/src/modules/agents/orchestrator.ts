@@ -40,6 +40,7 @@ export class AgentOrchestrator {
   }
 
   async run(input: MultiAgentInput): Promise<MultiAgentResult> {
+    console.log("[Orchestrator] Multi-agent flow started");
     const errors: string[] = [];
     let plan: AgentPlanStep[] = [];
     let research: ResearchItem[] = [];
@@ -53,9 +54,11 @@ export class AgentOrchestrator {
         availableTools: input.availableTools
       });
       plan = planned.steps;
+      console.log("PLAN:", plan);
     } catch (error) {
       errors.push(`plannerAgent: ${error instanceof Error ? error.message : "Unknown planning error"}`);
       plan = [{ id: "step-1", title: `Handle goal directly: ${input.goal}` }];
+      console.log("PLAN:", plan);
     }
 
     try {
@@ -66,6 +69,7 @@ export class AgentOrchestrator {
         chatId: input.chatId
       });
       research = researched.items;
+      console.log("DATA:", research);
 
       const reasoned = await this.reasoningAgent.run({
         goal: input.goal,
@@ -74,6 +78,7 @@ export class AgentOrchestrator {
         researchData: researched.combinedData
       });
       analysis = reasoned.analysis;
+      console.log("ANALYSIS:", analysis);
 
       const written = await this.writerAgent.run({
         goal: input.goal,

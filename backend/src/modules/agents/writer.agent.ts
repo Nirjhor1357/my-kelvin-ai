@@ -14,6 +14,7 @@ export interface WriterAgentOutput {
 
 export class WriterAgent {
   async run(input: WriterAgentInput): Promise<WriterAgentOutput> {
+    console.log("✍️ Writer Agent running...");
     const prompt = [
       `Goal: ${input.goal}`,
       "",

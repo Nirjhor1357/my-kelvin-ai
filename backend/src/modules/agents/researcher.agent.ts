@@ -24,6 +24,7 @@ export class ResearcherAgent {
   constructor(private readonly tools: AgentToolRegistry) {}
 
   async run(input: ResearcherAgentInput): Promise<ResearcherAgentOutput> {
+    console.log("🔍 Researcher Agent running...");
     const items: ResearchItem[] = [];
 
     if (!this.tools.has("search")) {

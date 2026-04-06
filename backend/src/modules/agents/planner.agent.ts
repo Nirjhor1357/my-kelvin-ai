@@ -14,6 +14,7 @@ export class PlannerAgent {
   constructor(private readonly planner: AgentPlanner) {}
 
   async run(input: PlannerAgentInput): Promise<PlannerAgentOutput> {
+    console.log("🧠 Planner Agent running...");
     const steps = await this.planner.createPlan({
       goal: input.goal,
       memoryContext: input.memoryContext,
