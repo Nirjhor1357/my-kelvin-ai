@@ -26,7 +26,8 @@ const envSchema = z.object({
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   AI_FALLBACK_MESSAGE: z.string().default("I hit a temporary AI issue. Please retry in a moment."),
   RATE_LIMIT_MAX: z.coerce.number().int().min(10).max(5000).default(180),
-  RATE_LIMIT_WINDOW: z.string().default("1 minute")
+  RATE_LIMIT_WINDOW: z.string().default("1 minute"),
+  FEATURE_FLAGS: z.string().default("")
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") {
     return;

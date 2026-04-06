@@ -4,6 +4,7 @@ import { AIService } from "./ai.service.js";
 import { resolveUserId } from "../../shared/requestIdentity.js";
 import { MemoryScope } from "./ai.model.js";
 import { enqueueGoalJob, getGoalJobStatus } from "./ai.queue.js";
+import { isFeatureEnabled } from "../../shared/featureFlags.js";
 
 const saveMemorySchema = z.object({
   userId: z.string().min(1).optional(),
@@ -60,6 +61,12 @@ export class AIController {
     const userId = parsed.data.userId ?? resolveUserId(request);
     if (!userId) {
       reply.status(401).send({ error: "Unauthorized" });
+      return;
+    }
+
+    const queueEnabled = await isFeatureEnabled("queue_goals", userId);
+    if (!queueEnabled) {
+      reply.status(403).send({ error: "queue_goals feature is disabled" });
       return;
     }
 

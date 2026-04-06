@@ -4,6 +4,7 @@ import { registerV1AuthRoutes } from "./auth.routes.js";
 import { registerV1UserRoutes } from "./user.routes.js";
 import { registerV1ChatRoutes } from "./chat.routes.js";
 import { registerV1AiRoutes } from "./ai.routes.js";
+import { registerV1FeatureFlagsRoutes } from "./featureFlags.routes.js";
 
 export async function registerApiV1(app: FastifyInstance): Promise<void> {
   await app.register(async (instance) => {
@@ -12,5 +13,6 @@ export async function registerApiV1(app: FastifyInstance): Promise<void> {
     await registerV1UserRoutes(instance);
     await registerV1ChatRoutes(instance);
     await registerV1AiRoutes(instance);
+    await registerV1FeatureFlagsRoutes(instance);
   }, { prefix: "/api/v1" });
 }

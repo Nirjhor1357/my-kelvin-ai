@@ -1,4 +1,4 @@
-import { ChatResponse, MemoryResult, TaskRun } from "../../lib/types";
+import { ChatMessage, ChatResponse, ChatSummary, MemoryResult, TaskRun } from "../../lib/types";
 
 export interface JarvisClientOptions {
   baseUrl: string;
@@ -52,6 +52,15 @@ export class JarvisApiClient {
       method: "POST",
       body: JSON.stringify(input)
     });
+  }
+
+  async listChats(userId: string): Promise<{ chats: ChatSummary[] }> {
+    const params = new URLSearchParams({ userId });
+    return this.request<{ chats: ChatSummary[] }>(`/chat?${params.toString()}`);
+  }
+
+  async getChatMessages(chatId: string): Promise<{ messages: ChatMessage[] }> {
+    return this.request<{ messages: ChatMessage[] }>(`/chat/${chatId}/messages`);
   }
 
   async runGoal(input: { userId: string; chatId: string; goal: string }): Promise<{ run: TaskRun }> {

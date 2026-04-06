@@ -49,6 +49,8 @@ Versioned API:
 - `GET /api/v1/ai/tasks/:taskId`
 - `POST /api/v1/ai/memory`
 - `GET /api/v1/ai/memory/search`
+- `GET /api/v1/flags`
+- `PATCH /api/v1/flags/:key`
 
 ## Frontend Architecture
 

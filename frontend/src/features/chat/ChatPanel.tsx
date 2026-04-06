@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { JarvisApiClient } from "../../services/api/client";
 import { useJarvisStore } from "../../lib/store/useJarvisStore";
 import { SectionCard } from "../../components/SectionCard";
+import { ChatSummary } from "../../lib/types";
 
 type SpeechRecognitionCtor = new () => {
   lang: string;
@@ -22,6 +23,8 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [errorText, setErrorText] = useState("");
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(true);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messages = useJarvisStore((state) => state.messages);
   const sessionId = useJarvisStore((state) => state.sessionId);
   const chatId = useJarvisStore((state) => state.chatId);
@@ -31,6 +34,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const setListening = useJarvisStore((state) => state.setListening);
   const addMessage = useJarvisStore((state) => state.addMessage);
   const setChatId = useJarvisStore((state) => state.setChatId);
+  const setMessages = useJarvisStore((state) => state.setMessages);
   const pushLog = useJarvisStore((state) => state.pushLog);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,6 +62,41 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
 
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
 
+  useEffect(() => {
+    async function loadChats(): Promise<void> {
+      try {
+        const response = await client.listChats(sessionId);
+        setChats(response.chats);
+      } catch {
+        // Keep chat UI operational if history retrieval fails.
+      }
+    }
+
+    void loadChats();
+  }, [client, sessionId]);
+
+  async function loadChatHistory(nextChatId: string): Promise<void> {
+    if (!nextChatId) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      const response = await client.getChatMessages(nextChatId);
+      setChatId(nextChatId);
+      setMessages(
+        response.messages
+          .filter((message) => message.role === "user" || message.role === "assistant")
+          .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }))
+      );
+      pushLog(`Loaded chat history: ${nextChatId}`);
+    } catch (error) {
+      setErrorText(`Failed to load chat history: ${(error as Error).message}`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   async function sendMessage(message: string): Promise<void> {
     setBusy(true);
     setErrorText("");
@@ -67,6 +106,10 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       const response = await client.chat({ userId: sessionId, chatId: chatId || undefined, message, memoryTopK: 4 });
       setChatId(response.chat.id);
       addMessage({ role: "assistant", content: response.answer });
+      setChats((existing) => {
+        const withoutCurrent = existing.filter((chat) => chat.id !== response.chat.id);
+        return [response.chat, ...withoutCurrent];
+      });
       setLastFailedMessage(null);
       pushLog("Assistant reply received");
     } catch (error) {
@@ -160,6 +203,28 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
         <button className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white" type="button" onClick={speakLastReply}>
           Speak Last Reply
         </button>
+      </div>
+
+      <div className="mb-3 rounded-lg border border-[var(--line)] bg-white p-2 text-sm">
+        <label className="mb-1 block font-mono text-xs uppercase tracking-wide">Chat History</label>
+        <select
+          className="ring-focus w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm"
+          disabled={historyLoading}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value) {
+              void loadChatHistory(value);
+            }
+          }}
+          value={chatId}
+        >
+          <option value="">Current conversation</option>
+          {chats.map((chat) => (
+            <option key={chat.id} value={chat.id}>
+              {(chat.title ?? "Untitled chat").slice(0, 48)}
+            </option>
+          ))}
+        </select>
       </div>
 
       {!isOnline && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Offline mode: connect to internet to send requests.</div>}

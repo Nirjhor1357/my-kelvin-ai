@@ -25,3 +25,18 @@ export type ChatResponse = {
   answer: string;
   retrievedMemories: MemoryResult[];
 };
+
+export type ChatSummary = {
+  id: string;
+  userId: string;
+  title: string | null;
+  summary: string | null;
+  status: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  chatId: string;
+  role: string;
+  content: string;
+};
