@@ -2,11 +2,13 @@ import { prisma } from "../../lib/prisma.js";
 import { AIService } from "../ai/ai.service.js";
 import { ChatSummary } from "./chat.model.js";
 import { AgentService } from "../agents/agent.service.js";
+import { MemoryService } from "../memory/memory.service.js";
 
 export class ChatService {
   constructor(
     private readonly aiService = new AIService(),
-    private readonly agentService = new AgentService()
+    private readonly agentService = new AgentService(),
+    private readonly memoryService = new MemoryService()
   ) {}
 
   private isAgentPrompt(message: string): boolean {
@@ -57,6 +59,9 @@ export class ChatService {
 
   async sendMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number; useThinking?: boolean; useTools?: boolean }): Promise<{ chat: ChatSummary; answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }> }> {
     const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
+    const relevantMemories = await this.memoryService.getRelevantMemories(input.userId, input.message);
+    const memoryBlock = this.memoryService.buildMemoryInjectionBlock(relevantMemories);
+    const messageWithMemory = memoryBlock ? `${memoryBlock}\n\nUser request:\n${input.message}` : input.message;
 
     if (this.isAgentPrompt(input.message)) {
       const mode = input.useTools ? "agent-tools" : input.useThinking ? "agent-thinking" : "agent";
@@ -73,11 +78,11 @@ export class ChatService {
       let run: any;
 
       if (input.useTools) {
-        run = await this.agentService.runAgentWithTools(input.message, input.userId, chat.id);
+        run = await this.agentService.runAgentWithTools(messageWithMemory, input.userId, chat.id);
       } else if (input.useThinking) {
-        run = await this.agentService.runAgentWithThinking(input.message, input.userId, chat.id);
+        run = await this.agentService.runAgentWithThinking(messageWithMemory, input.userId, chat.id);
       } else {
-        run = await this.agentService.runAgent(input.message, input.userId, chat.id);
+        run = await this.agentService.runAgent(messageWithMemory, input.userId, chat.id);
       }
 
       await prisma.message.create({
@@ -106,8 +111,14 @@ export class ChatService {
     const response = await this.aiService.createChatReply({
       userId: input.userId,
       chatId: chat.id,
-      message: input.message,
+      message: messageWithMemory,
       memoryTopK: input.memoryTopK
+    });
+
+    await this.memoryService.extractAndStoreLongTermMemories({
+      userId: input.userId,
+      userMessage: input.message,
+      assistantMessage: response.answer
     });
 
     return {
@@ -119,12 +130,30 @@ export class ChatService {
 
   async streamMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number }): Promise<{ chat: ChatSummary; stream: AsyncGenerator<string> }> {
     const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
-    const stream = this.aiService.createChatReplyStream({
+    const relevantMemories = await this.memoryService.getRelevantMemories(input.userId, input.message);
+    const memoryBlock = this.memoryService.buildMemoryInjectionBlock(relevantMemories);
+    const messageWithMemory = memoryBlock ? `${memoryBlock}\n\nUser request:\n${input.message}` : input.message;
+
+    const baseStream = this.aiService.createChatReplyStream({
       userId: input.userId,
       chatId: chat.id,
-      message: input.message,
+      message: messageWithMemory,
       memoryTopK: input.memoryTopK
     });
+
+    const stream = (async function* (memoryService: MemoryService): AsyncGenerator<string> {
+      let fullAnswer = "";
+      for await (const token of baseStream) {
+        fullAnswer += token;
+        yield token;
+      }
+
+      await memoryService.extractAndStoreLongTermMemories({
+        userId: input.userId,
+        userMessage: input.message,
+        assistantMessage: fullAnswer || "No response generated."
+      });
+    })(this.memoryService);
 
     return { chat, stream };
   }

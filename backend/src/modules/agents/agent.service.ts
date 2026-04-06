@@ -4,6 +4,7 @@ import { AgentExecutor, AgentStepResult, ToolExecutionLog } from "./executor.js"
 import { AgentOrchestrator } from "./orchestrator.js";
 import { AgentPlanner } from "./planner.js";
 import { AgentToolRegistry, defaultAgentTools } from "./tools.js";
+import { MemoryService } from "../memory/memory.service.js";
 
 export interface AgentTask {
   id: string;
@@ -37,15 +38,9 @@ export class AgentService {
   private readonly tools = new AgentToolRegistry(defaultAgentTools);
   private readonly executor = new AgentExecutor(this.tools);
   private readonly orchestrator = new AgentOrchestrator(this.planner, this.tools);
+  private readonly memoryService = new MemoryService();
 
-  async runAgent(goal: string, userId?: string, chatId?: string): Promise<AgentResult> {
-    const task: AgentTask = {
-      id: `agent-${Date.now()}`,
-      goal,
-      userId,
-      chatId
-    };
-
+  private async buildMemoryContext(goal: string, userId?: string, chatId?: string): Promise<string> {
     const recentMessages = await prisma.message.findMany({
       where: chatId
         ? { chatId }
@@ -56,10 +51,29 @@ export class AgentService {
       take: 12
     });
 
-    const memoryContext = recentMessages
+    const chatContext = recentMessages
       .reverse()
       .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
       .join("\n");
+
+    if (!userId) {
+      return chatContext;
+    }
+
+    const relevantMemories = await this.memoryService.getRelevantMemories(userId, goal);
+    const memoryBlock = this.memoryService.buildMemoryInjectionBlock(relevantMemories);
+    return memoryBlock ? `${memoryBlock}\n\n${chatContext}` : chatContext;
+  }
+
+  async runAgent(goal: string, userId?: string, chatId?: string): Promise<AgentResult> {
+    const task: AgentTask = {
+      id: `agent-${Date.now()}`,
+      goal,
+      userId,
+      chatId
+    };
+
+    const memoryContext = await this.buildMemoryContext(goal, userId, chatId);
 
     const orchestration = await this.orchestrator.run({
       goal,
@@ -80,6 +94,7 @@ export class AgentService {
     await prisma.memory.create({
       data: {
         userId,
+        type: "goal",
         scope: "PROJECT",
         content: memoryContent,
         metadata: JSON.stringify({
@@ -94,6 +109,14 @@ export class AgentService {
         })
       }
     });
+
+    if (userId) {
+      await this.memoryService.extractAndStoreLongTermMemories({
+        userId,
+        userMessage: goal,
+        assistantMessage: finalResult
+      });
+    }
 
     return {
       success: orchestration.success,
