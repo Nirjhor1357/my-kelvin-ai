@@ -55,7 +55,7 @@ export class ChatService {
     };
   }
 
-  async sendMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number }): Promise<{ chat: ChatSummary; answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }> }> {
+  async sendMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number; useThinking?: boolean }): Promise<{ chat: ChatSummary; answer: string; retrievedMemories: Array<{ id: string; content: string; score: number }> }> {
     const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
 
     if (this.isAgentPrompt(input.message)) {
@@ -64,17 +64,26 @@ export class ChatService {
           chatId: chat.id,
           role: "user",
           content: input.message,
-          metadata: JSON.stringify({ mode: "agent" })
+          metadata: JSON.stringify({ mode: input.useThinking ? "agent-thinking" : "agent" })
         }
       });
 
-      const run = await this.agentService.runAgent(input.message, input.userId, chat.id);
+      const run = input.useThinking
+        ? await this.agentService.runAgentWithThinking(input.message, input.userId, chat.id)
+        : await this.agentService.runAgent(input.message, input.userId, chat.id);
+
       await prisma.message.create({
         data: {
           chatId: chat.id,
           role: "assistant",
           content: run.result,
-          metadata: JSON.stringify({ mode: "agent", steps: run.steps, errors: run.errors })
+          metadata: JSON.stringify({
+            mode: input.useThinking ? "agent-thinking" : "agent",
+            steps: run.steps,
+            errors: run.errors,
+            iterations: "iterationCount" in run ? run.iterationCount : undefined,
+            evaluations: "evaluations" in run ? run.evaluations : undefined
+          })
         }
       });
 

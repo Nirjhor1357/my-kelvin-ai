@@ -77,4 +77,62 @@ export class AgentPlanner {
 
     return lines.map((title, index) => ({ id: `step-${index + 1}`, title }));
   }
+
+  async improvePlan(input: {
+    goal: string;
+    currentSteps: AgentPlanStep[];
+    feedback: string;
+    availableTools: Array<{ name: string; description: string }>;
+  }): Promise<AgentPlanStep[]> {
+    const system = [
+      "You are Jarvis plan improviser.",
+      "Refine plan based on feedback from previous execution.",
+      "Return valid JSON array only.",
+      "Each step: { title: string, tool?: string, input?: object }.",
+      "Keep successful steps, fix or replace failed ones."
+    ].join(" ");
+
+    const prompt = [
+      `Original goal: ${input.goal}`,
+      "",
+      "Previous plan that needs improvement:",
+      input.currentSteps.map((step) => `- ${step.title}`).join("\n"),
+      "",
+      "Evaluation feedback:",
+      input.feedback,
+      "",
+      "Available tools:",
+      input.availableTools.map((tool) => `- ${tool.name}: ${tool.description}`).join("\n") || "None",
+      "",
+      "Provide an improved plan addressing the feedback."
+    ].join("\n");
+
+    try {
+      const structured = await completeJson<Array<{ title: string; tool?: string; input?: Record<string, unknown> }>>(
+        prompt,
+        system,
+        600
+      );
+      const normalized = normalizePlan(structured.content);
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    } catch {
+      // Fallback to text parsing below
+    }
+
+    const fallback = await completeText(prompt, `${system} If JSON fails, return numbered plain-text steps.`, 500);
+    const lines = fallback.content
+      .split("\n")
+      .map((line) => line.replace(/^\s*(\d+[\.)]|[-*])\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    if (!lines.length) {
+      // If improvement fails, return original steps
+      return input.currentSteps;
+    }
+
+    return lines.map((title, index) => ({ id: `step-${index + 1}`, title }));
+  }
 }
