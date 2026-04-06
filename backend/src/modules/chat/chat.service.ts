@@ -128,11 +128,71 @@ export class ChatService {
     };
   }
 
-  async streamMessage(input: { userId: string; chatId?: string; message: string; memoryTopK?: number }): Promise<{ chat: ChatSummary; stream: AsyncGenerator<string> }> {
+  async streamMessage(input: {
+    userId: string;
+    chatId?: string;
+    message: string;
+    memoryTopK?: number;
+    useThinking?: boolean;
+    useTools?: boolean;
+  }): Promise<{ chat: ChatSummary; stream: AsyncGenerator<string> }> {
     const chat = await this.ensureChat(input.userId, input.chatId, input.message.slice(0, 48));
     const relevantMemories = await this.memoryService.getRelevantMemories(input.userId, input.message);
     const memoryBlock = this.memoryService.buildMemoryInjectionBlock(relevantMemories);
     const messageWithMemory = memoryBlock ? `${memoryBlock}\n\nUser request:\n${input.message}` : input.message;
+
+    if (this.isAgentPrompt(input.message)) {
+      const mode = input.useTools ? "agent-tools" : input.useThinking ? "agent-thinking" : "agent";
+
+      await prisma.message.create({
+        data: {
+          chatId: chat.id,
+          role: "user",
+          content: input.message,
+          metadata: JSON.stringify({ mode, transport: "stream" })
+        }
+      });
+
+      let run: any;
+
+      if (input.useTools) {
+        run = await this.agentService.runAgentWithTools(messageWithMemory, input.userId, chat.id);
+      } else if (input.useThinking) {
+        run = await this.agentService.runAgentWithThinking(messageWithMemory, input.userId, chat.id);
+      } else {
+        run = await this.agentService.runAgent(messageWithMemory, input.userId, chat.id);
+      }
+
+      await prisma.message.create({
+        data: {
+          chatId: chat.id,
+          role: "assistant",
+          content: run.result,
+          metadata: JSON.stringify({
+            mode,
+            transport: "stream",
+            steps: "steps" in run ? run.steps : undefined,
+            errors: run.errors,
+            iterations: "iterationCount" in run ? run.iterationCount : undefined,
+            evaluations: "evaluations" in run ? run.evaluations : undefined,
+            toolExecutions: "toolExecutions" in run ? run.toolExecutions : undefined
+          })
+        }
+      });
+
+      const stream = (async function* (memoryService: MemoryService): AsyncGenerator<string> {
+        const answer = run.result || "No response generated.";
+        yield answer;
+
+        await memoryService.extractAndStoreLongTermMemories({
+          userId: input.userId,
+          userMessage: input.message,
+          assistantMessage: answer
+        });
+      })(this.memoryService);
+
+      return { chat, stream };
+    }
 
     const baseStream = this.aiService.createChatReplyStream({
       userId: input.userId,
