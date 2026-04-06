@@ -99,6 +99,8 @@ Frontend:
 
 ## Deployment
 
+See [DEPLOYMENT.md](DEPLOYMENT.md) for a dedicated production deployment guide.
+
 Frontend:
 
 - Deploy `frontend/` to Vercel
@@ -150,6 +152,8 @@ Recommended production variables:
 - Test restore workflow at least once per sprint in a staging database.
 
 ## Upgrade Plan
+
+See [ROADMAP.md](ROADMAP.md) for phased delivery milestones.
 
 1. MVP hardening: keep the current SQLite + Prisma stack stable, add auth login UI, and tighten input validation.
 2. Agent expansion: add richer tool routing, per-step tracing, and queue-backed goal execution.

@@ -39,22 +39,23 @@ export class AgentOrchestrator {
     const normalizedMemory = memoryContext.toLowerCase();
     const mergedContext = `${normalizedGoal}\n${normalizedMemory}`;
 
-    const hasClearGoal = normalizedGoal.length >= 8;
-    const hasTimeConstraint = /\b\d+\s*(hours?|hrs?)\b|per\s*(day|week)|daily|weekly|night|morning|evening|time\s*block/.test(
+    const hasClearGoal = normalizedGoal.length > 0;
+    const hasTimeConstraint = /\b\d+\s*(hours?|hrs?)\b|per\s*(day|week)|daily|weekly|night|morning|evening|time\s*block|study\s*time/.test(
       mergedContext
     );
-    const hasSubjectConstraint = /subject|math|physics|chemistry|biology|english|coding|exam|topic/.test(mergedContext);
-    const memoryFacts = (normalizedMemory.match(/- \(/g) || []).length;
+    const hasSubjectConstraint =
+      /subject|math|physics|chemistry|biology|english|coding|exam|topic/.test(mergedContext) ||
+      /\b[a-z]{2,5}\s?\d{3}\b/.test(mergedContext);
+    const hasMemoryPreference = /study[_\s-]*time\s*[:=]\s*(night|morning|evening)|study\s*best\s*at|study\s*preference|night|morning|evening/.test(
+      normalizedMemory
+    );
 
     if (!hasClearGoal) {
       return false;
     }
 
-    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
-      return hasTimeConstraint || memoryFacts >= 1;
-    }
-
-    return hasTimeConstraint || hasSubjectConstraint || memoryFacts >= 1 || input.availableTools.length === 0;
+    void input;
+    return hasSubjectConstraint || hasTimeConstraint || hasMemoryPreference;
   }
 
   private hasPartialContext(goal: string, memoryContext: string): boolean {
@@ -159,6 +160,8 @@ export class AgentOrchestrator {
 
   async run(input: MultiAgentInput): Promise<MultiAgentResult> {
     console.log("[Orchestrator] Multi-agent flow started");
+    console.log("Input:", input.goal);
+    console.log("Memory:", input.memoryContext);
     const errors: string[] = [];
     let plan: AgentPlanStep[] = [];
     let research: ResearchItem[] = [];
