@@ -34,6 +34,65 @@ export class AgentOrchestrator {
   private readonly reasoningAgent = new ReasoningAgent();
   private readonly writerAgent = new WriterAgent();
 
+  private hasEnoughContext(goal: string, memoryContext: string): boolean {
+    const normalizedGoal = goal.toLowerCase();
+    const normalizedMemory = memoryContext.toLowerCase();
+
+    const hasStudyPreference = /study best at|study preference|night|morning|evening/.test(normalizedMemory);
+    const hasStudyDuration = /\b\d+\s*hours?\b|duration|study hours|typical duration/.test(normalizedMemory);
+
+    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
+      return hasStudyPreference || (hasStudyPreference && hasStudyDuration);
+    }
+
+    const memoryFacts = (normalizedMemory.match(/- \(/g) || []).length;
+    return memoryFacts >= 2;
+  }
+
+  private hasPartialContext(goal: string, memoryContext: string): boolean {
+    const normalizedGoal = goal.toLowerCase();
+    const normalizedMemory = memoryContext.toLowerCase();
+
+    if (/study schedule|study plan|study routine/.test(normalizedGoal)) {
+      const hasStudyPreference = /study best at|study preference|night|morning|evening/.test(normalizedMemory);
+      const hasStudyDuration = /\b\d+\s*hours?\b|duration|study hours|typical duration/.test(normalizedMemory);
+      return hasStudyPreference !== hasStudyDuration;
+    }
+
+    return false;
+  }
+
+  private buildMemoryDrivenPlan(goal: string, memoryContext: string): AgentPlanStep[] {
+    const memoryHints = memoryContext
+      .split("\n")
+      .filter((line) => line.trim().startsWith("- ("))
+      .slice(0, 5)
+      .join(" | ");
+
+    return [
+      {
+        id: "step-1",
+        title: "Derive execution constraints from user memory",
+        input: { goal, memoryHints }
+      },
+      {
+        id: "step-2",
+        title: "Generate action-oriented plan using known preferences",
+        input: { memoryDriven: true }
+      },
+      {
+        id: "step-3",
+        title: "Produce practical schedule with concrete time blocks",
+        input: { format: "timetable" }
+      },
+      {
+        id: "step-4",
+        title: "Add adaptive note for changes without blocking execution",
+        input: { softConfirmation: true }
+      }
+    ];
+  }
+
   constructor(planner: AgentPlanner, tools: AgentToolRegistry) {
     this.plannerAgent = new PlannerAgent(planner);
     this.researcherAgent = new ResearcherAgent(tools);
@@ -46,19 +105,29 @@ export class AgentOrchestrator {
     let research: ResearchItem[] = [];
     let analysis = "";
     let finalOutput = "";
+    const enoughContext = this.hasEnoughContext(input.goal, input.memoryContext);
+    const partialContext = this.hasPartialContext(input.goal, input.memoryContext);
 
-    try {
-      const planned = await this.plannerAgent.run({
-        goal: input.goal,
-        memoryContext: input.memoryContext,
-        availableTools: input.availableTools
-      });
-      plan = planned.steps;
+    console.log(`[Orchestrator] Context check: enough=${enoughContext}, partial=${partialContext}`);
+
+    if (enoughContext) {
+      console.log("[Orchestrator] Using memory-driven direct plan (skip planner questioning)");
+      plan = this.buildMemoryDrivenPlan(input.goal, input.memoryContext);
       console.log("PLAN:", plan);
-    } catch (error) {
-      errors.push(`plannerAgent: ${error instanceof Error ? error.message : "Unknown planning error"}`);
-      plan = [{ id: "step-1", title: `Handle goal directly: ${input.goal}` }];
-      console.log("PLAN:", plan);
+    } else {
+      try {
+        const planned = await this.plannerAgent.run({
+          goal: input.goal,
+          memoryContext: input.memoryContext,
+          availableTools: input.availableTools
+        });
+        plan = planned.steps;
+        console.log("PLAN:", plan);
+      } catch (error) {
+        errors.push(`plannerAgent: ${error instanceof Error ? error.message : "Unknown planning error"}`);
+        plan = [{ id: "step-1", title: `Handle goal directly: ${input.goal}` }];
+        console.log("PLAN:", plan);
+      }
     }
 
     try {
@@ -89,6 +158,14 @@ export class AgentOrchestrator {
         memoryContext: input.memoryContext
       });
       finalOutput = written.content;
+
+      if (partialContext) {
+        finalOutput = [
+          finalOutput,
+          "",
+          "If your available study duration has changed recently, tell me once and I will fine-tune this plan."
+        ].join("\n");
+      }
     } catch (error) {
       errors.push(`executionPipeline: ${error instanceof Error ? error.message : "Unknown pipeline error"}`);
       analysis = analysis || "Pipeline fallback used.";

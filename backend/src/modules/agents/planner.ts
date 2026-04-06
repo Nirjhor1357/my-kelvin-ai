@@ -44,7 +44,8 @@ export class AgentPlanner {
       "Use tools only when helpful.",
       "If relevant user memory exists, use it to make decisions without asking unnecessary follow-up questions.",
       "Before adding a clarification step, check whether memory context already provides the needed information.",
-      "Only add clarification when critical data is missing and cannot be inferred safely."
+      "Only add clarification when critical data is missing and cannot be inferred safely.",
+      "Hard rule: never ask for study time or user preferences if they already exist in memory context."
     ].join(" ");
 
     const prompt = [
