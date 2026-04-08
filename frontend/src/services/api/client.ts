@@ -146,7 +146,21 @@ export class JarvisApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`TTS request failed (${response.status})`);
+      let details = "";
+      try {
+        const contentType = response.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const payload = (await response.json()) as { error?: string };
+          details = payload.error ? `: ${payload.error}` : "";
+        } else {
+          const textBody = await response.text();
+          details = textBody ? `: ${textBody.slice(0, 240)}` : "";
+        }
+      } catch {
+        // Keep generic status error when parsing fails.
+      }
+
+      throw new Error(`TTS request failed (${response.status})${details}`);
     }
 
     return response.blob();

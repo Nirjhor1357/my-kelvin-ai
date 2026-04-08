@@ -66,24 +66,24 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       return;
     }
 
-    await new Promise<void>((resolve) => {
+    const playbackSucceeded = await new Promise<boolean>((resolve) => {
       voiceInputRef.current?.stopListening();
       setListening(false);
       setIsSpeaking(true);
       void playAssistantAudio(client, text)
         .then(() => {
           setIsSpeaking(false);
-          resolve();
+          resolve(true);
         })
         .catch((error) => {
           pushLog(`Voice output failed: ${(error as Error).message}`);
           setIsSpeaking(false);
-          resolve();
+          resolve(false);
         });
       pushLog("Playing ElevenLabs assistant voice");
     });
 
-    if (jarvisMode && isOnline && !busy) {
+    if (jarvisMode && playbackSucceeded && isOnline && !busy) {
       voiceInputRef.current?.startListening();
     }
   }

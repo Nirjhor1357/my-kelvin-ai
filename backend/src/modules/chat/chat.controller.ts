@@ -126,7 +126,9 @@ export class ChatController {
       reply.header("Cache-Control", "no-store");
       reply.send(audioBuffer);
     } catch (error) {
-      reply.status(502).send({ error: error instanceof Error ? error.message : "TTS synthesis failed" });
+      const message = error instanceof Error ? error.message : "TTS synthesis failed";
+      const statusCode = /not configured|api key/i.test(message) ? 503 : 502;
+      reply.status(statusCode).send({ error: message });
     }
   };
 }
