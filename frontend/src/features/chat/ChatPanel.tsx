@@ -7,7 +7,7 @@ import { useJarvisStore } from "../../lib/store/useJarvisStore";
 import { SectionCard } from "../../components/SectionCard";
 import { ChatSummary } from "../../lib/types";
 import { VoiceInput, VoiceInputHandle } from "./VoiceInput";
-import { playAssistantAudio } from "../../services/tts.service";
+import { playAssistantAudio, stopAssistantAudio } from "../../services/tts.service";
 
 export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [input, setInput] = useState("");
@@ -17,6 +17,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
   const [jarvisMode, setJarvisMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [streamDraft, setStreamDraft] = useState("");
@@ -33,6 +34,10 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const pushLog = useJarvisStore((state) => state.pushLog);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const voiceInputRef = useRef<VoiceInputHandle | null>(null);
+  const speechQueueRef = useRef<string[]>([]);
+  const speechBufferRef = useRef("");
+  const speechGenerationRef = useRef(0);
+  const speakingWorkerRef = useRef(false);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -58,34 +63,104 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
 
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
 
-  async function speakText(text: string): Promise<void> {
-    if (!voiceOutputEnabled || typeof window === "undefined") {
-      if (jarvisMode && isOnline && !busy) {
-        voiceInputRef.current?.startListening();
-      }
+  function clearSpeechQueue(stopCurrentAudio = false): void {
+    speechQueueRef.current = [];
+    speechBufferRef.current = "";
+    speechGenerationRef.current += 1;
+    if (stopCurrentAudio) {
+      stopAssistantAudio();
+      setIsSpeaking(false);
+    }
+  }
+
+  function queueSpeechChunk(chunk: string): void {
+    const normalized = chunk.replace(/\s+/g, " ").trim();
+    if (!normalized || !voiceOutputEnabled) {
       return;
     }
 
-    const playbackSucceeded = await new Promise<boolean>((resolve) => {
+    speechQueueRef.current.push(normalized);
+    const generation = speechGenerationRef.current;
+    if (!speakingWorkerRef.current) {
+      void runSpeechWorker(generation);
+    }
+  }
+
+  function extractSpeechChunks(delta: string): void {
+    speechBufferRef.current += delta;
+    const parts = speechBufferRef.current.split(/(?<=[.?!])\s+/);
+
+    if (parts.length > 1) {
+      for (let i = 0; i < parts.length - 1; i += 1) {
+        queueSpeechChunk(parts[i] ?? "");
+      }
+      speechBufferRef.current = parts[parts.length - 1] ?? "";
+    }
+
+    if (speechBufferRef.current.length > 220) {
+      const splitPoint = speechBufferRef.current.lastIndexOf(" ", 180);
+      if (splitPoint > 0) {
+        const earlyChunk = speechBufferRef.current.slice(0, splitPoint);
+        queueSpeechChunk(earlyChunk);
+        speechBufferRef.current = speechBufferRef.current.slice(splitPoint + 1);
+      }
+    }
+  }
+
+  function flushSpeechBuffer(): void {
+    if (!speechBufferRef.current.trim()) {
+      return;
+    }
+
+    queueSpeechChunk(speechBufferRef.current);
+    speechBufferRef.current = "";
+  }
+
+  async function runSpeechWorker(generation: number): Promise<void> {
+    if (speakingWorkerRef.current) {
+      return;
+    }
+
+    speakingWorkerRef.current = true;
+    while (generation === speechGenerationRef.current && speechQueueRef.current.length > 0) {
+      const nextChunk = speechQueueRef.current.shift();
+      if (!nextChunk) {
+        continue;
+      }
+
       voiceInputRef.current?.stopListening();
       setListening(false);
       setIsSpeaking(true);
-      void playAssistantAudio(client, text)
-        .then(() => {
-          setIsSpeaking(false);
-          resolve(true);
-        })
-        .catch((error) => {
-          pushLog(`Voice output failed: ${(error as Error).message}`);
-          setIsSpeaking(false);
-          resolve(false);
-        });
-      pushLog("Playing ElevenLabs assistant voice");
-    });
 
-    if (jarvisMode && playbackSucceeded && isOnline && !busy) {
-      voiceInputRef.current?.startListening();
+      try {
+        pushLog("Playing ElevenLabs assistant voice");
+        await playAssistantAudio(client, nextChunk);
+      } catch (error) {
+        pushLog(`Voice output failed: ${(error as Error).message}`);
+      }
     }
+
+    speakingWorkerRef.current = false;
+    if (generation === speechGenerationRef.current) {
+      setIsSpeaking(false);
+    }
+  }
+
+  async function waitForSpeechDrain(): Promise<void> {
+    while (speakingWorkerRef.current || speechQueueRef.current.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+  }
+
+  async function speakText(text: string): Promise<void> {
+    clearSpeechQueue(false);
+    queueSpeechChunk(text);
+    await waitForSpeechDrain();
+  }
+
+  function interruptSpeech(): void {
+    clearSpeechQueue(true);
+    pushLog("Speech interrupted");
   }
 
   async function refreshChats(): Promise<void> {
@@ -124,9 +199,13 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   }
 
   async function sendMessage(message: string): Promise<void> {
+    voiceInputRef.current?.stopListening();
+    setListening(false);
     setBusy(true);
+    setIsThinking(true);
     setErrorText("");
     setStreamDraft("");
+    clearSpeechQueue(false);
     pushLog("Sending chat message");
 
     try {
@@ -144,10 +223,15 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
             onToken: (token) => {
               streamed += token;
               setStreamDraft(streamed);
+              if (token.trim().length > 0) {
+                setIsThinking(false);
+                extractSpeechChunks(token);
+              }
             }
           }
         );
       } catch {
+        setIsThinking(false);
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
@@ -161,9 +245,12 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
 
       const finalAnswer = streamed.trim();
       if (finalAnswer) {
+        setIsThinking(false);
+        flushSpeechBuffer();
         addMessage({ role: "assistant", content: finalAnswer });
-        await speakText(finalAnswer);
+        await waitForSpeechDrain();
       } else {
+        setIsThinking(false);
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
@@ -175,12 +262,14 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       setLastFailedMessage(null);
       pushLog("Assistant reply received");
     } catch (error) {
+      setIsThinking(false);
       const text = `Chat error: ${(error as Error).message}`;
       setErrorText(text);
       setLastFailedMessage(message);
       addMessage({ role: "assistant", content: text });
       pushLog("Chat request failed");
     } finally {
+      setIsThinking(false);
       setBusy(false);
     }
   }
@@ -256,9 +345,13 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
           ref={voiceInputRef}
           disabled={busy || !isOnline}
           isSpeaking={isSpeaking}
+          isThinking={isThinking}
+          continuousMode={jarvisMode}
+          debounceMs={700}
           listening={listening}
           setListening={setListening}
           onTranscript={(text) => void submitVoiceMessage(text)}
+          onInterrupt={interruptSpeech}
           onError={(message) => {
             setErrorText(message);
             pushLog(message);

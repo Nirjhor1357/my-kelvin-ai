@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
 type SpeechRecognitionCtor = new () => {
   lang: string;
@@ -18,9 +18,13 @@ type SpeechRecognitionCtor = new () => {
 export interface VoiceInputProps {
   disabled?: boolean;
   isSpeaking?: boolean;
+  isThinking?: boolean;
+  continuousMode?: boolean;
+  debounceMs?: number;
   listening: boolean;
   setListening: (value: boolean) => void;
   onTranscript: (text: string) => void | Promise<void>;
+  onInterrupt?: () => void;
   onError: (message: string) => void;
 }
 
@@ -46,10 +50,39 @@ function mapSpeechError(error: string): string {
 }
 
 export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function VoiceInput(
-  { disabled = false, isSpeaking = false, listening, setListening, onTranscript, onError }: VoiceInputProps,
+  {
+    disabled = false,
+    isSpeaking = false,
+    isThinking = false,
+    continuousMode = false,
+    debounceMs = 700,
+    listening,
+    setListening,
+    onTranscript,
+    onInterrupt,
+    onError
+  }: VoiceInputProps,
   ref
 ) {
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transcriptRef = useRef("");
+  const userStoppedRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  const speakingRef = useRef(isSpeaking);
+  const continuousRef = useRef(continuousMode);
+
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
+
+  useEffect(() => {
+    speakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    continuousRef.current = continuousMode;
+  }, [continuousMode]);
 
   function getSpeechRecognition(): SpeechRecognitionCtor | null {
     if (typeof window === "undefined") {
@@ -65,14 +98,21 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
   }
 
   function stopListening(): void {
+    userStoppedRef.current = true;
     recognitionRef.current?.stop();
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     setListening(false);
   }
 
   function startListening(): void {
     if (isSpeaking) {
-      return;
+      onInterrupt?.();
     }
+
+    userStoppedRef.current = false;
 
     const SpeechRecognition = getSpeechRecognition();
 
@@ -84,25 +124,71 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = "en-US";
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+    recognition.continuous = true;
 
     recognition.onstart = () => setListening(true);
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+
+      if (!userStoppedRef.current && continuousRef.current && !disabledRef.current && !speakingRef.current) {
+        setTimeout(() => {
+          if (!disabledRef.current && !speakingRef.current) {
+            startListening();
+          }
+        }, 200);
+      }
+    };
     recognition.onerror = (event) => onError(mapSpeechError(event.error));
     recognition.onresult = async (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim() ?? "";
-      if (!transcript) {
-        onError("Speech was not recognized. Please try again.");
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        const piece = event.results[i]?.[0]?.transcript ?? "";
+        transcript += `${piece} `;
+      }
+
+      const normalized = transcript.trim();
+      if (!normalized) {
         return;
       }
 
-      await onTranscript(transcript);
+      transcriptRef.current = normalized;
+
+      if (isSpeaking) {
+        onInterrupt?.();
+      }
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      debounceRef.current = setTimeout(async () => {
+        const finalText = transcriptRef.current.trim();
+        transcriptRef.current = "";
+        if (!finalText) {
+          return;
+        }
+
+        await onTranscript(finalText);
+      }, debounceMs);
     };
 
     recognition.start();
   }
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   useImperativeHandle(ref, () => ({
     startListening,
@@ -114,7 +200,7 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
       <button
         className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white disabled:opacity-60"
         type="button"
-        disabled={disabled || isSpeaking}
+        disabled={disabled}
         onClick={listening ? stopListening : startListening}
       >
         {listening ? "Stop Listening" : "Voice Input"}
@@ -128,6 +214,7 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
           Listening... 🎤
         </div>
       )}
+      {isThinking && <div className="text-xs text-slate-700">Thinking... 🧠</div>}
       {isSpeaking && <div className="text-xs text-slate-700">Jarvis speaking... 🔊</div>}
     </div>
   );
