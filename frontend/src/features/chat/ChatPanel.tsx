@@ -133,7 +133,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       setIsSpeaking(true);
 
       try {
-        pushLog("Playing ElevenLabs assistant voice");
+        pushLog("Playing assistant voice");
         await playAssistantAudio(client, nextChunk);
       } catch (error) {
         pushLog(`Voice output failed: ${(error as Error).message}`);

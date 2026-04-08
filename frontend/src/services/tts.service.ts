@@ -57,55 +57,12 @@ async function speakWithBrowserTts(text: string): Promise<void> {
 }
 
 export async function playAssistantAudio(client: JarvisApiClient, text: string): Promise<void> {
+  void client;
   const cleaned = text.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
   if (!cleaned) {
     return;
   }
 
-  try {
-    stopAssistantAudio();
-    const blob = await client.textToSpeech(cleaned);
-    const audioUrl = URL.createObjectURL(blob);
-    activeAudioUrl = audioUrl;
-
-    await new Promise<void>((resolve, reject) => {
-      const audio = new Audio(audioUrl);
-      activeAudio = audio;
-      activeResolve = resolve;
-      audio.onended = () => {
-        if (activeAudioUrl) {
-          URL.revokeObjectURL(activeAudioUrl);
-          activeAudioUrl = null;
-        }
-        activeAudio = null;
-        activeResolve = null;
-        resolve();
-      };
-      audio.onerror = () => {
-        if (activeAudioUrl) {
-          URL.revokeObjectURL(activeAudioUrl);
-          activeAudioUrl = null;
-        }
-        activeAudio = null;
-        activeResolve = null;
-        reject(new Error("Audio playback failed"));
-      };
-
-      void audio.play().catch((error) => {
-        if (activeAudioUrl) {
-          URL.revokeObjectURL(activeAudioUrl);
-          activeAudioUrl = null;
-        }
-        activeAudio = null;
-        activeResolve = null;
-        reject(error instanceof Error ? error : new Error("Audio playback failed"));
-      });
-    });
-  } catch (error) {
-    try {
-      await speakWithBrowserTts(cleaned);
-    } catch {
-      throw error instanceof Error ? error : new Error("Voice playback failed");
-    }
-  }
+  stopAssistantAudio();
+  await speakWithBrowserTts(cleaned);
 }
