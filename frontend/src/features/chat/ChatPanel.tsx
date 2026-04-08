@@ -343,7 +343,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       <div className="mb-3 flex flex-wrap gap-2">
         <VoiceInput
           ref={voiceInputRef}
-          disabled={busy || !isOnline}
+          disabled={!isOnline}
           isSpeaking={isSpeaking}
           isThinking={isThinking}
           continuousMode={jarvisMode}

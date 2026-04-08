@@ -129,7 +129,9 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
     recognition.continuous = true;
 
     recognition.onstart = () => {
-      onInterrupt?.();
+      if (speakingRef.current) {
+        onInterrupt?.();
+      }
       setListening(true);
     };
     recognition.onend = () => {
@@ -162,7 +164,7 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
 
       transcriptRef.current = normalized;
 
-      if (isSpeaking) {
+      if (speakingRef.current) {
         onInterrupt?.();
       }
 
