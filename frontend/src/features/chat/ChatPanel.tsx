@@ -380,6 +380,14 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
         <button
           className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white"
           type="button"
+          onClick={interruptSpeech}
+          disabled={!isSpeaking}
+        >
+          Stop Voice
+        </button>
+        <button
+          className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white"
+          type="button"
           onClick={() => {
             setJarvisMode((value) => {
               const next = !value;

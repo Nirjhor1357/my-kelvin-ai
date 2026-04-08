@@ -18,7 +18,13 @@ export function stopAudio(): void {
   }
 
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.pause();
     window.speechSynthesis.cancel();
+    setTimeout(() => {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    }, 0);
   }
 
   activeUtterance = null;
