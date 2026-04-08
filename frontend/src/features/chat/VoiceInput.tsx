@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 
 type SpeechRecognitionCtor = new () => {
   lang: string;
@@ -17,10 +17,16 @@ type SpeechRecognitionCtor = new () => {
 
 export interface VoiceInputProps {
   disabled?: boolean;
+  isSpeaking?: boolean;
   listening: boolean;
   setListening: (value: boolean) => void;
   onTranscript: (text: string) => void | Promise<void>;
   onError: (message: string) => void;
+}
+
+export interface VoiceInputHandle {
+  startListening: () => void;
+  stopListening: () => void;
 }
 
 function mapSpeechError(error: string): string {
@@ -39,7 +45,10 @@ function mapSpeechError(error: string): string {
   return `Voice input failed: ${error}`;
 }
 
-export function VoiceInput({ disabled = false, listening, setListening, onTranscript, onError }: VoiceInputProps) {
+export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function VoiceInput(
+  { disabled = false, isSpeaking = false, listening, setListening, onTranscript, onError }: VoiceInputProps,
+  ref
+) {
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
 
   function getSpeechRecognition(): SpeechRecognitionCtor | null {
@@ -61,6 +70,10 @@ export function VoiceInput({ disabled = false, listening, setListening, onTransc
   }
 
   function startListening(): void {
+    if (isSpeaking) {
+      return;
+    }
+
     const SpeechRecognition = getSpeechRecognition();
 
     if (!SpeechRecognition) {
@@ -91,25 +104,31 @@ export function VoiceInput({ disabled = false, listening, setListening, onTransc
     recognition.start();
   }
 
+  useImperativeHandle(ref, () => ({
+    startListening,
+    stopListening
+  }));
+
   return (
     <div className="flex items-center gap-2">
       <button
         className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white disabled:opacity-60"
         type="button"
-        disabled={disabled}
+        disabled={disabled || isSpeaking}
         onClick={listening ? stopListening : startListening}
       >
         {listening ? "Stop Listening" : "Voice Input"}
       </button>
-      {listening && (
+      {listening && !isSpeaking && (
         <div className="flex items-center gap-2 text-xs text-slate-700" aria-live="polite">
           <span className="relative inline-flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
           </span>
-          Listening...
+          Listening... 🎤
         </div>
       )}
+      {isSpeaking && <div className="text-xs text-slate-700">Jarvis speaking... 🔊</div>}
     </div>
   );
-}
+});

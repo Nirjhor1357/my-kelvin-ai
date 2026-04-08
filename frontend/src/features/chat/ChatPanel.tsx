@@ -6,7 +6,7 @@ import { JarvisApiClient } from "../../services/api/client";
 import { useJarvisStore } from "../../lib/store/useJarvisStore";
 import { SectionCard } from "../../components/SectionCard";
 import { ChatSummary } from "../../lib/types";
-import { VoiceInput } from "./VoiceInput";
+import { VoiceInput, VoiceInputHandle } from "./VoiceInput";
 
 export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [input, setInput] = useState("");
@@ -14,6 +14,8 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
+  const [jarvisMode, setJarvisMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [streamDraft, setStreamDraft] = useState("");
@@ -29,6 +31,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const setMessages = useJarvisStore((state) => state.setMessages);
   const pushLog = useJarvisStore((state) => state.pushLog);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const voiceInputRef = useRef<VoiceInputHandle | null>(null);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -54,22 +57,45 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
 
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
 
-  function speakText(text: string): void {
+  async function speakText(text: string): Promise<void> {
     if (!voiceOutputEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      if (jarvisMode && isOnline && !busy) {
+        voiceInputRef.current?.startListening();
+      }
       return;
     }
 
     const cleaned = text.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
     if (!cleaned) {
+      if (jarvisMode && isOnline && !busy) {
+        voiceInputRef.current?.startListening();
+      }
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(cleaned);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
-    pushLog("Speaking assistant reply");
+    await new Promise<void>((resolve) => {
+      voiceInputRef.current?.stopListening();
+      setListening(false);
+      setIsSpeaking(true);
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(cleaned);
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        resolve();
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        resolve();
+      };
+      window.speechSynthesis.speak(utterance);
+      pushLog("Speaking assistant reply");
+    });
+
+    if (jarvisMode && isOnline && !busy) {
+      voiceInputRef.current?.startListening();
+    }
   }
 
   async function refreshChats(): Promise<void> {
@@ -135,7 +161,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
-        speakText(fallback.answer);
+        await speakText(fallback.answer);
         setStreamDraft("");
         await refreshChats();
         setLastFailedMessage(null);
@@ -146,12 +172,12 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       const finalAnswer = streamed.trim();
       if (finalAnswer) {
         addMessage({ role: "assistant", content: finalAnswer });
-        speakText(finalAnswer);
+        await speakText(finalAnswer);
       } else {
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
-        speakText(fallback.answer);
+        await speakText(fallback.answer);
       }
 
       setStreamDraft("");
@@ -208,6 +234,18 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
     await sendMessage(text);
   }
 
+  useEffect(() => {
+    if (!jarvisMode) {
+      return;
+    }
+
+    if (!isOnline || busy || isSpeaking) {
+      return;
+    }
+
+    voiceInputRef.current?.startListening();
+  }, [jarvisMode, isOnline, busy, isSpeaking]);
+
   async function retryLastMessage(): Promise<void> {
     if (!lastFailedMessage) {
       return;
@@ -225,7 +263,9 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
     >
       <div className="mb-3 flex flex-wrap gap-2">
         <VoiceInput
+          ref={voiceInputRef}
           disabled={busy || !isOnline}
+          isSpeaking={isSpeaking}
           listening={listening}
           setListening={setListening}
           onTranscript={(text) => void submitVoiceMessage(text)}
@@ -240,6 +280,21 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
           onClick={() => setVoiceOutputEnabled((value) => !value)}
         >
           Voice Output: {voiceOutputEnabled ? "On" : "Off"}
+        </button>
+        <button
+          className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white"
+          type="button"
+          onClick={() => {
+            setJarvisMode((value) => {
+              const next = !value;
+              if (!next) {
+                voiceInputRef.current?.stopListening();
+              }
+              return next;
+            });
+          }}
+        >
+          Jarvis Mode: {jarvisMode ? "On" : "Off"}
         </button>
       </div>
 
