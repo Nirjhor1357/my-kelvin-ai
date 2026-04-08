@@ -6,23 +6,14 @@ import { JarvisApiClient } from "../../services/api/client";
 import { useJarvisStore } from "../../lib/store/useJarvisStore";
 import { SectionCard } from "../../components/SectionCard";
 import { ChatSummary } from "../../lib/types";
-
-type SpeechRecognitionCtor = new () => {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onstart: (() => void) | null;
-  onend: (() => void) | null;
-  onresult: ((event: { results: Array<Array<{ transcript: string }>> }) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  start: () => void;
-};
+import { VoiceInput } from "./VoiceInput";
 
 export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [input, setInput] = useState("");
   const [errorText, setErrorText] = useState("");
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(true);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [streamDraft, setStreamDraft] = useState("");
@@ -62,6 +53,24 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   }, [messages, busy]);
 
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
+
+  function speakText(text: string): void {
+    if (!voiceOutputEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    const cleaned = text.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
+    if (!cleaned) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+    pushLog("Speaking assistant reply");
+  }
 
   async function refreshChats(): Promise<void> {
     try {
@@ -126,6 +135,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
+        speakText(fallback.answer);
         setStreamDraft("");
         await refreshChats();
         setLastFailedMessage(null);
@@ -136,10 +146,12 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       const finalAnswer = streamed.trim();
       if (finalAnswer) {
         addMessage({ role: "assistant", content: finalAnswer });
+        speakText(finalAnswer);
       } else {
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
+        speakText(fallback.answer);
       }
 
       setStreamDraft("");
@@ -176,6 +188,26 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
     await sendMessage(message);
   }
 
+  async function submitVoiceMessage(message: string): Promise<void> {
+    const text = message.trim();
+    if (!text) {
+      setErrorText("Speech was not recognized. Please try again.");
+      pushLog("Voice input empty");
+      return;
+    }
+
+    if (!isOnline) {
+      const offlineText = "You are offline. Reconnect and retry.";
+      setErrorText(offlineText);
+      pushLog("Offline mode: voice request skipped");
+      return;
+    }
+
+    setInput("");
+    addMessage({ role: "user", content: text });
+    await sendMessage(text);
+  }
+
   async function retryLastMessage(): Promise<void> {
     if (!lastFailedMessage) {
       return;
@@ -185,45 +217,6 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
     await sendMessage(lastFailedMessage);
   }
 
-  function speakLastReply(): void {
-    if (!("speechSynthesis" in window)) {
-      return;
-    }
-
-    const lastReply = [...messages].reverse().find((message) => message.role === "assistant");
-    if (!lastReply) {
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(lastReply.content);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
-    pushLog("Speaking last assistant reply");
-  }
-
-  function startVoiceInput(): void {
-    const speechWindow = window as Window & {
-      webkitSpeechRecognition?: SpeechRecognitionCtor;
-      SpeechRecognition?: SpeechRecognitionCtor;
-    };
-    const SpeechRecognition = speechWindow.webkitSpeechRecognition || speechWindow.SpeechRecognition;
-    if (!SpeechRecognition) {
-      pushLog("SpeechRecognition is unavailable in this browser");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onstart = () => setListening(true);
-    recognition.onend = () => setListening(false);
-    recognition.onresult = (event) => setInput(event.results[0][0].transcript);
-    recognition.onerror = (event) => pushLog(`Voice error: ${event.error}`);
-    recognition.start();
-  }
-
   return (
     <SectionCard
       title="Chat Interface"
@@ -231,11 +224,22 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       className="lg:col-span-2"
     >
       <div className="mb-3 flex flex-wrap gap-2">
-        <button className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white" type="button" onClick={startVoiceInput}>
-          {listening ? "Listening..." : "Voice Input"}
-        </button>
-        <button className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white" type="button" onClick={speakLastReply}>
-          Speak Last Reply
+        <VoiceInput
+          disabled={busy || !isOnline}
+          listening={listening}
+          setListening={setListening}
+          onTranscript={(text) => void submitVoiceMessage(text)}
+          onError={(message) => {
+            setErrorText(message);
+            pushLog(message);
+          }}
+        />
+        <button
+          className="ring-focus rounded-md border border-[var(--line)] px-3 py-1.5 text-sm hover:bg-white"
+          type="button"
+          onClick={() => setVoiceOutputEnabled((value) => !value)}
+        >
+          Voice Output: {voiceOutputEnabled ? "On" : "Off"}
         </button>
       </div>
 
