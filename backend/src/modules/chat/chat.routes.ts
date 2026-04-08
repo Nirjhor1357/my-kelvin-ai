@@ -36,5 +36,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       }
     }
   }, controller.sendMessageStream);
+  app.post("/tts", {
+    schema: {
+      body: {
+        type: "object",
+        required: ["text"],
+        additionalProperties: false,
+        properties: {
+          text: { type: "string", minLength: 1, maxLength: 3000 }
+        }
+      }
+    }
+  }, controller.synthesizeSpeech);
   app.get("/:chatId/messages", controller.getMessages);
 }

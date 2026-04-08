@@ -3,12 +3,14 @@ import { AIService } from "../ai/ai.service.js";
 import { ChatSummary } from "./chat.model.js";
 import { AgentService } from "../agents/agent.service.js";
 import { MemoryService } from "../memory/memory.service.js";
+import { TtsService } from "../../services/tts.service.js";
 
 export class ChatService {
   constructor(
     private readonly aiService = new AIService(),
     private readonly agentService = new AgentService(),
-    private readonly memoryService = new MemoryService()
+    private readonly memoryService = new MemoryService(),
+    private readonly ttsService = new TtsService()
   ) {}
 
   private isAgentPrompt(message: string): boolean {
@@ -231,5 +233,9 @@ export class ChatService {
 
   async getMessages(chatId: string) {
     return prisma.message.findMany({ where: { chatId }, orderBy: { createdAt: "asc" } });
+  }
+
+  async synthesizeSpeech(text: string): Promise<Buffer> {
+    return this.ttsService.synthesizeSpeech(text);
   }
 }

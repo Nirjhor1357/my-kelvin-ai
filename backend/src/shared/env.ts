@@ -19,6 +19,8 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
+  ELEVENLABS_API_KEY: z.string().optional(),
+  ELEVENLABS_VOICE_ID: z.string().default("EXAVITQu4vr4xnSDxMaL"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   MAX_INPUT_CHARS: z.coerce.number().int().min(200).max(20000).default(2000),
   MAX_RESPONSE_BYTES: z.coerce.number().int().min(1024).max(10 * 1024 * 1024).default(512 * 1024),

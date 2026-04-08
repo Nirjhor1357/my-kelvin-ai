@@ -7,6 +7,7 @@ import { useJarvisStore } from "../../lib/store/useJarvisStore";
 import { SectionCard } from "../../components/SectionCard";
 import { ChatSummary } from "../../lib/types";
 import { VoiceInput, VoiceInputHandle } from "./VoiceInput";
+import { playAssistantAudio } from "../../services/tts.service";
 
 export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const [input, setInput] = useState("");
@@ -58,15 +59,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const canSend = useMemo(() => !busy && isOnline, [busy, isOnline]);
 
   async function speakText(text: string): Promise<void> {
-    if (!voiceOutputEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
-      if (jarvisMode && isOnline && !busy) {
-        voiceInputRef.current?.startListening();
-      }
-      return;
-    }
-
-    const cleaned = text.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
-    if (!cleaned) {
+    if (!voiceOutputEnabled || typeof window === "undefined") {
       if (jarvisMode && isOnline && !busy) {
         voiceInputRef.current?.startListening();
       }
@@ -77,20 +70,17 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       voiceInputRef.current?.stopListening();
       setListening(false);
       setIsSpeaking(true);
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(cleaned);
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        resolve();
-      };
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        resolve();
-      };
-      window.speechSynthesis.speak(utterance);
-      pushLog("Speaking assistant reply");
+      void playAssistantAudio(client, text)
+        .then(() => {
+          setIsSpeaking(false);
+          resolve();
+        })
+        .catch((error) => {
+          pushLog(`Voice output failed: ${(error as Error).message}`);
+          setIsSpeaking(false);
+          resolve();
+        });
+      pushLog("Playing ElevenLabs assistant voice");
     });
 
     if (jarvisMode && isOnline && !busy) {

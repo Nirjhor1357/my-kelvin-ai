@@ -14,6 +14,10 @@ const sendMessageSchema = z.object({
   useTools: z.boolean().optional()
 });
 
+const ttsSchema = z.object({
+  text: z.string().min(1).max(3000)
+});
+
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
@@ -107,5 +111,22 @@ export class ChatController {
     }
 
     reply.send({ messages: await this.chatService.getMessages(params.data.chatId) });
+  };
+
+  synthesizeSpeech = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const parsed = ttsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400).send({ error: parsed.error.flatten() });
+      return;
+    }
+
+    try {
+      const audioBuffer = await this.chatService.synthesizeSpeech(parsed.data.text);
+      reply.header("Content-Type", "audio/mpeg");
+      reply.header("Cache-Control", "no-store");
+      reply.send(audioBuffer);
+    } catch (error) {
+      reply.status(502).send({ error: error instanceof Error ? error.message : "TTS synthesis failed" });
+    }
   };
 }
