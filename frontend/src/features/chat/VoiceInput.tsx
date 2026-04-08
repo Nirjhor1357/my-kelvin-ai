@@ -34,6 +34,10 @@ export interface VoiceInputHandle {
 }
 
 function mapSpeechError(error: string): string {
+  if (error === "aborted") {
+    return "";
+  }
+
   if (error === "not-allowed" || error === "service-not-allowed") {
     return "Microphone permission denied. Please allow microphone access and try again.";
   }
@@ -149,7 +153,14 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
         }, 200);
       }
     };
-    recognition.onerror = (event) => onError(mapSpeechError(event.error));
+    recognition.onerror = (event) => {
+      const mapped = mapSpeechError(event.error);
+      if (!mapped) {
+        return;
+      }
+
+      onError(mapped);
+    };
     recognition.onresult = async (event) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i += 1) {
