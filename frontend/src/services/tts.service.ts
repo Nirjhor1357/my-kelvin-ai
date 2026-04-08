@@ -1,20 +1,20 @@
 import { JarvisApiClient } from "./api/client";
 
-let activeAudio: HTMLAudioElement | null = null;
-let activeAudioUrl: string | null = null;
+let currentAudio: HTMLAudioElement | null = null;
+let currentAudioUrl: string | null = null;
 let activeUtterance: SpeechSynthesisUtterance | null = null;
 let activeResolve: (() => void) | null = null;
 
-export function stopAssistantAudio(): void {
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.currentTime = 0;
-    activeAudio = null;
+export function stopAudio(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
   }
 
-  if (activeAudioUrl) {
-    URL.revokeObjectURL(activeAudioUrl);
-    activeAudioUrl = null;
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
   }
 
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -29,6 +29,8 @@ export function stopAssistantAudio(): void {
     resolve();
   }
 }
+
+export const stopAssistantAudio = stopAudio;
 
 async function speakWithBrowserTts(text: string): Promise<void> {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -63,6 +65,6 @@ export async function playAssistantAudio(client: JarvisApiClient, text: string):
     return;
   }
 
-  stopAssistantAudio();
+  stopAudio();
   await speakWithBrowserTts(cleaned);
 }

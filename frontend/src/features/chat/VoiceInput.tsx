@@ -128,7 +128,10 @@ export const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(function
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      onInterrupt?.();
+      setListening(true);
+    };
     recognition.onend = () => {
       setListening(false);
       if (debounceRef.current) {
