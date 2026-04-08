@@ -38,6 +38,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   const speechBufferRef = useRef("");
   const speechGenerationRef = useRef(0);
   const speakingWorkerRef = useRef(false);
+  const speechEnabledForResponseRef = useRef(true);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -159,6 +160,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
   }
 
   function interruptSpeech(): void {
+    speechEnabledForResponseRef.current = false;
     clearSpeechQueue(true);
     pushLog("Speech interrupted");
   }
@@ -205,6 +207,7 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
     setIsThinking(true);
     setErrorText("");
     setStreamDraft("");
+    speechEnabledForResponseRef.current = true;
     clearSpeechQueue(false);
     pushLog("Sending chat message");
 
@@ -225,7 +228,9 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
               setStreamDraft(streamed);
               if (token.trim().length > 0) {
                 setIsThinking(false);
-                extractSpeechChunks(token);
+                if (speechEnabledForResponseRef.current) {
+                  extractSpeechChunks(token);
+                }
               }
             }
           }
@@ -235,7 +240,9 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
-        await speakText(fallback.answer);
+        if (speechEnabledForResponseRef.current) {
+          await speakText(fallback.answer);
+        }
         setStreamDraft("");
         await refreshChats();
         setLastFailedMessage(null);
@@ -246,15 +253,21 @@ export function ChatPanel({ client }: { client: JarvisApiClient }) {
       const finalAnswer = streamed.trim();
       if (finalAnswer) {
         setIsThinking(false);
-        flushSpeechBuffer();
+        if (speechEnabledForResponseRef.current) {
+          flushSpeechBuffer();
+        }
         addMessage({ role: "assistant", content: finalAnswer });
-        await waitForSpeechDrain();
+        if (speechEnabledForResponseRef.current) {
+          await waitForSpeechDrain();
+        }
       } else {
         setIsThinking(false);
         const fallback = await client.chat({ userId: sessionId, chatId: streamedChatId || undefined, message, memoryTopK: 4 });
         setChatId(fallback.chat.id);
         addMessage({ role: "assistant", content: fallback.answer });
-        await speakText(fallback.answer);
+        if (speechEnabledForResponseRef.current) {
+          await speakText(fallback.answer);
+        }
       }
 
       setStreamDraft("");
